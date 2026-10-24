@@ -26,6 +26,9 @@ function detail(s: PlanStep): string {
   return bits.join(' · ');
 }
 
+// Run next to Halo UK instances and the Supabase project (London).
+export const preferredRegion = 'lhr1';
+
 export default async function PlanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { supabase, workspace } = await getContext();

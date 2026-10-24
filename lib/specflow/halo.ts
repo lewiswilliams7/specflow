@@ -33,6 +33,9 @@ export async function assertPublicHost(baseUrl: string): Promise<void> {
   if (addrs.some((a) => PRIVATE.some((re) => re.test(a.address)))) throw new Error('That address points to a private network.');
 }
 
+const RETRY = new Set([429, 502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export function haloReader(conn: HaloConnection): HaloReader & { token: () => Promise<string> } {
   let cached: { token: string; expiresAt: number } | null = null;
 
@@ -64,14 +67,30 @@ export function haloReader(conn: HaloConnection): HaloReader & { token: () => Pr
   async function get<T = unknown>(path: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(`${conn.baseUrl}/api${path.startsWith('/') ? path : `/${path}`}`);
     for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${await token()}`, Accept: 'application/json' },
-      redirect: 'error',
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`Halo GET ${url.pathname} failed (${res.status})`);
-    return (text ? JSON.parse(text) : null) as T;
+    // Rule R1 (24 Oct): Halo answers 504/429/502/503 under load (seen on the first in-app read, Workflow/9).
+    // Reads are safe to repeat, so retry with back-off, honouring Retry-After.
+    for (let attempt = 1; ; attempt++) {
+      let res: Response | null = null;
+      try {
+        res = await fetch(url, {
+          headers: { Authorization: `Bearer ${await token()}`, Accept: 'application/json' },
+          redirect: 'error',
+          signal: AbortSignal.timeout(45_000),
+        });
+      } catch (e) {
+        if (attempt >= 4) throw new Error(`Halo didn't answer GET ${url.pathname} after ${attempt} tries.`);
+        await sleep(1000 * 2 ** attempt);
+        continue;
+      }
+      const text = await res.text();
+      if (res.ok) return (text ? JSON.parse(text) : null) as T;
+      if (RETRY.has(res.status) && attempt < 4) {
+        const after = Number(res.headers.get('retry-after'));
+        await sleep(Number.isFinite(after) && after > 0 ? Math.min(after, 20) * 1000 : 1000 * 2 ** attempt);
+        continue;
+      }
+      throw new Error(`Halo GET ${url.pathname} failed (${res.status}${RETRY.has(res.status) ? ` after ${attempt} tries: Halo is busy, try again in a minute` : ''})`);
+    }
   }
 
   return { get, token };

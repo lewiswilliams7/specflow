@@ -5,6 +5,8 @@ import { getContext } from '@/lib/workspace';
 import { createPlan, scanInstance } from '../../actions';
 
 // Reading a big instance and planning can each take a couple of minutes.
+// Run next to Halo UK instances and the Supabase project (London).
+export const preferredRegion = 'lhr1';
 export const maxDuration = 300;
 
 export default async function InstancePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ connected?: string }> }) {

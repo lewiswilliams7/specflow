@@ -21,7 +21,8 @@ const FIELD_TYPE_NAMES: Record<number, string> = { 0: 'text', 1: 'memo', 2: 'dro
 const APPROVER_TYPES: Record<number, string> = { 10: 'line manager', 1: 'agent', 3: 'group', 8: 'ad-hoc', 42: 'change CAB' };
 
 /** Run fn over items, a few at a time (a few hundred detail reads on a big instance). */
-async function pool<T, R>(items: T[], fn: (t: T) => Promise<R>, size = 6): Promise<R[]> {
+// 4 at a time: gentle enough for a trial instance (rule R1), quick enough to finish a big read in about a minute.
+async function pool<T, R>(items: T[], fn: (t: T) => Promise<R>, size = 4): Promise<R[]> {
   const out: R[] = new Array(items.length);
   let next = 0;
   await Promise.all(

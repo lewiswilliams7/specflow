@@ -3,6 +3,8 @@ import { ActionForm } from '@/components/ActionForm';
 import { getContext } from '@/lib/workspace';
 import { connectInstance } from './actions';
 
+// Run next to Halo UK instances and the Supabase project (London).
+export const preferredRegion = 'lhr1';
 export const maxDuration = 60;
 
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
