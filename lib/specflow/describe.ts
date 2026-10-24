@@ -102,6 +102,8 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   if (st.sla_action === 'hold') out.push('pause the SLA while in this status');
   if (st.insert_steps?.length) out.push(`add ${st.insert_steps.map((i) => stageText(i, ref)).join('; ')}. Old buttons that skipped past a new stage now lead into it (rule W5)`);
   if (st.department_of) out.push(`move to the same department as ${ref(st.department_of)}`);
+  for (const c of st.add_actions ?? []) out.push(`add a "${ref(c.via)}" button on ${c.step} that goes to ${c.to_step}`);
+  for (const c of st.retarget_actions ?? []) out.push(`make "${ref(c.via)}" on ${c.step} go to ${c.to_step}`);
   let text = out.length ? out.join('; ') : 'Update';
   text = text.charAt(0).toUpperCase() + text.slice(1) + '.';
   if (step.object === 'field_group') {
