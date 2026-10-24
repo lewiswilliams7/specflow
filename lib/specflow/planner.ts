@@ -9,7 +9,7 @@ import workflowTest from './examples/workflow-test.json';
 import type { readInventory } from './inventory';
 import { complete, parseJsonReply } from './llm';
 import { mandatoryEverywhere, planChecks } from './plan-checks';
-import { type Plan, type PlanStep, refsOf } from './plan-types';
+import { type Plan, type PlanStep, notReadyFeatureNames, readyFeaturePrompt, refsOf } from './plan-types';
 
 export type Inventory = Awaited<ReturnType<typeof readInventory>>;
 const EXAMPLES = [onboarding, workflowTest, approvalTest2, tier1Test2];
@@ -81,6 +81,7 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   - approval_process set: { add_stages: [approvers, same shapes as above] } adds stages at the END of an EXISTING process in place (P8). Use it to add a final approval (including a rules stage); other stage changes aren't supported.
 - team set: { department_of?: ref, add_members?: [agent refs] }
   - approval_group set: { add_members: [agent refs] }
+${readyFeaturePrompt()}
   Not updatable: removing anything (including buttons on stages), renaming or removing workflow steps, changing or removing existing approval stages (adding at the end is supported), changing a field's type.
   Refs are step ids and must be defined by an EARLIER step (reuse or create).
 
@@ -96,7 +97,7 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   - Reuse what exists (exact names from the inventory), but only when it matches what the request asks for. Never create something whose name matches an existing one ignoring case (CFLaptopType vs CFlaptopType). Never invent names of existing things: anything not in the inventory must be created by an earlier step.
   - When the request describes stages a ticket moves through, build them: copy a workflow and add the stages with insert_steps.
   - based_on must name an EXISTING record, never the thing being created. Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
-  - If the request needs something not listed above (e.g. conditional field visibility, auto-assignment rules, email templates, notifications, child tickets, categories, renaming or removing existing workflow steps, rules based on field values (routing, priority), roles/permissions, reports), DO NOT approximate it: describe it plainly in "unsupported" and build only the supported parts.
+  - If the request needs something not listed above (e.g. ${[...notReadyFeatureNames(), 'notifications on events', 'categories', 'renaming or removing existing workflow steps', 'roles/permissions', 'reports'].join(', ')}), DO NOT approximate it: describe it plainly in "unsupported" and build only the supported parts.
   - Line-manager approval only works if the instance syncs managers from Active Directory / Entra (rule P6: Halo users' managers can't be set by hand). If you use {"line_manager": true}, ask in questions whether they sync managers from AD, and say the fallback (a named approver or group) in assumptions.
   - Fields: a requirement already met by a field on the form or in a section (standard Halo fields like symptom, risk or fbackoutplan count) is met: reuse that field and use field_mandatory to make it required. Never add a second field with the same meaning.
   - Ticket types: if an existing type already covers a requested type (e.g. "Change Request" for normal changes), update it; create a new type only for a genuinely separate one.
@@ -130,7 +131,7 @@ ${who}${convo}${prev}${asked}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST
 ${request}
 ${ctx.previous ? REVISE : ''}${extra}`;
 
-  const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group']);
+  const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template']);
   function validate(plan: Plan): string[] {
     const errors: string[] = [];
     if (!Array.isArray(plan.steps)) return ['"steps" must be an array'];

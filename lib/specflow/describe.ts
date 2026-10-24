@@ -10,6 +10,7 @@ export type Inv = { details?: Details } | null;
 const OBJECT: Record<PlanStep['object'], string> = {
   team: 'team', field: 'field', sla: 'SLA', approval_process: 'approval process', ticket_type: 'ticket type', status: 'status',
   outcome: 'action', workflow: 'workflow', agent: 'agent', approval_group: 'approval group', field_group: 'form section',
+  email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child ticket template',
 };
 
 /** "CFhardware" → "Hardware" (its label on this instance), falling back to the name. */
@@ -77,7 +78,20 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
         out.push(`New status${step.sla_action === 'hold' ? ' that pauses the SLA' : ''}`);
         break;
       case 'outcome':
-        out.push(`New action button${step.new_status ? ` that sets the status to ${ref(step.new_status)}` : ''}`);
+        out.push(`New action button${step.new_status ? ` that sets the status to ${ref(step.new_status)}` : ''}${step.send_email ? ` and emails the requester "${ref(step.send_email)}"` : ''}`);
+        break;
+      case 'email_template':
+        out.push(`New email template, subject "${step.subject ?? step.name}"`);
+        break;
+      case 'ticket_rule': {
+        const when = (step.when ?? []).map((c) => ('ticket_type' in c ? `the ticket type is ${ref(c.ticket_type)}` : `${ref(c.field)} is "${c.equals}"`));
+        const t = step.then ?? {};
+        const then = [t.team && `team ${ref(t.team)}`, t.agent && `agent ${ref(t.agent)}`, t.priority && `priority ${t.priority}`].filter(Boolean) as string[];
+        out.push(`When ${list(when) || 'any ticket'}, set ${list(then) || 'nothing'}`);
+        break;
+      }
+      case 'ticket_template':
+        out.push(`Each ${ref(step.attach_to)} raises ${list((step.children ?? []).map((c) => `"${c.summary}" (${ref(c.ticket_type)}${c.team ? `, ${ref(c.team)}` : ''})`)) || 'no child tickets'}`);
         break;
       case 'team':
       case 'approval_group':
@@ -107,6 +121,10 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   if (st.add_stages?.length) out.push(`add ${st.add_stages.length === 1 ? 'a final stage' : 'final stages'}: ${list(st.add_stages.map(stageWho))}`);
   for (const c of st.add_actions ?? []) out.push(`add a "${ref(c.via)}" button on ${c.step} that goes to ${c.to_step}`);
   for (const c of st.retarget_actions ?? []) out.push(`make "${ref(c.via)}" on ${c.step} go to ${c.to_step}`);
+  if (st.send_email) out.push(`email the requester "${ref(st.send_email)}" when it's pressed`);
+  for (const c of st.show_section_when ?? []) out.push(`show the section ${ref(c.group)} only when ${ref(c.field)} is ${list(c.equals.map((e) => `"${e}"`))}`);
+  if (st.subject) out.push(`set the subject to "${st.subject}"`);
+  if (st.body) out.push('change the body');
   let text = out.length ? out.join('; ') : 'Update';
   text = text.charAt(0).toUpperCase() + text.slice(1) + '.';
   if (step.object === 'field_group') {

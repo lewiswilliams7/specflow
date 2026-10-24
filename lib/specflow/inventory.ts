@@ -94,6 +94,9 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
     teams: (teamsList = await list('Team')).map(nameOf),
     agents: (agentRows = await list('Agent', (r) => Number(r.id) > 1)).map(nameOf),
     categories: (await list('Category')).map(nameOf),
+    // Names only, so plans can reuse them (areas behind rule B2). Missing or forbidden endpoints read as empty.
+    email_templates: await list('EmailTemplate').then((r) => r.map(nameOf), () => [] as string[]),
+    ticket_rules: await list('TicketRules').then((r) => r.map(nameOf), () => [] as string[]),
   };
   if (!detail) return { ...inventory, details: undefined };
 
