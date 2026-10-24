@@ -1,6 +1,7 @@
 /**
- * READ-ONLY Halo client for the app. There is deliberately no write method here: the app connects,
- * reads configuration and plans. Building stays in the builder until it ships with its safety gates.
+ * Halo client for the app. Reads retry on busy answers (rule R1). Writes are never retried, and there is
+ * deliberately no delete anywhere. Every build goes through the dry-run gate (rule B1) in
+ * lib/specflow/build/build.ts before its first write.
  */
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
@@ -22,6 +23,8 @@ const PRIVATE = [/^10\./, /^127\./, /^169\.254\./, /^172\.(1[6-9]|2\d|3[01])\./,
  * no IP addresses, no localhost, nothing that resolves to a private network.
  */
 export async function assertPublicHost(baseUrl: string): Promise<void> {
+  // Local test Halo only, and never in production builds.
+  if (process.env.NODE_ENV !== 'production' && process.env.SPECFLOW_ALLOW_LOCAL_HALO === '1') return;
   const u = new URL(baseUrl);
   if (u.protocol !== 'https:') throw new Error('Use your Halo address starting https://');
   const host = u.hostname.toLowerCase();
@@ -36,7 +39,7 @@ export async function assertPublicHost(baseUrl: string): Promise<void> {
 const RETRY = new Set([429, 502, 503, 504]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function haloReader(conn: HaloConnection): HaloReader & { token: () => Promise<string> } {
+export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unknown>(path: string, body: unknown) => Promise<T>; token: () => Promise<string> } {
   let cached: { token: string; expiresAt: number } | null = null;
 
   async function token(): Promise<string> {
@@ -93,7 +96,22 @@ export function haloReader(conn: HaloConnection): HaloReader & { token: () => Pr
     }
   }
 
-  return { get, token };
+  async function post<T = unknown>(path: string, body: unknown): Promise<T> {
+    const url = new URL(`${conn.baseUrl}/api${path.startsWith('/') ? path : `/${path}`}`);
+    // Writes are never retried: a timed-out POST may still have saved, and re-running the build is the safe retry (U4).
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await token()}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      redirect: 'error',
+      signal: AbortSignal.timeout(90_000),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`POST ${url.pathname} failed (${res.status})\n${text.slice(0, 2000)}`);
+    return (text ? JSON.parse(text) : null) as T;
+  }
+
+  return { get, post, token };
 }
 
 /** Halo list endpoints return either an array or an object wrapping one. Find the array. */

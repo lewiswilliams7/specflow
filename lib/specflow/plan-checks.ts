@@ -2,7 +2,7 @@
  * Deterministic plan checks for rules M5 to M7 (HALO_RULES.md). The model can ignore a prompt rule; it can't get
  * past these. Keep identical to the spike's spike/lib/plan-checks.ts (only the import line differs).
  */
-import type { Plan, PlanStep } from './plan-types';
+import type { Plan, PlanStep } from './build/translators';
 
 export type CheckContext = {
   /** Custom field name to its inventory details: '"Label" dropdown: a | b'. */

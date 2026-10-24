@@ -1,11 +1,11 @@
 import { Mark } from '@/components/SiteChrome';
-import { PlanView, planState, StateBadge } from '@/components/PlanView';
+import { type BuildTarget, PlanView, planState, StateBadge } from '@/components/PlanView';
 import { counts, diffPlans, humanise, type Inv } from '@/lib/specflow/describe';
 import type { Plan } from '@/lib/specflow/plan-types';
 import { site } from '@/lib/site';
 
 /** The planner's side of a turn: what it says, what changed since the last version, its questions, then the plan. */
-export function PlannerTurn({ plan, errors, previous, inventory, latest, planId, canBuild }: { plan: Plan | null; errors: string[]; previous: Plan | null; inventory: Inv; latest: boolean; planId?: string; canBuild?: boolean }) {
+export function PlannerTurn({ plan, errors, previous, inventory, latest, planId, canBuild, target }: { plan: Plan | null; errors: string[]; previous: Plan | null; inventory: Inv; latest: boolean; planId?: string; canBuild?: boolean; target?: BuildTarget }) {
   const c = counts(plan);
   const state = planState(plan, errors);
   const diff = diffPlans(previous, plan, inventory);
@@ -40,7 +40,7 @@ export function PlannerTurn({ plan, errors, previous, inventory, latest, planId,
         </div>
       ) : null}
 
-      <PlanView plan={plan} errors={errors} inventory={inventory} open={latest} heading={latest ? 'Plan' : 'Earlier version'} planId={planId} canBuild={canBuild} />
+      <PlanView plan={plan} errors={errors} inventory={inventory} open={latest} heading={latest ? 'Plan' : 'Earlier version'} planId={planId} canBuild={canBuild} target={target} />
     </div>
   );
 }

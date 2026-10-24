@@ -190,7 +190,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
         </div>
       </form>
       {error ? <p className="notice error composer-error" role="alert">{error}</p> : null}
-      <p className="composer-note">Plans only. Nothing is written to Halo from here.</p>
+      <p className="composer-note">Messages change the plan, never Halo. Building happens from a ready plan, after a preview.</p>
     </div>
   );
 

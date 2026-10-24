@@ -1,3 +1,4 @@
+import { BuildPanel, type LastBuild } from '@/components/BuildPanel';
 import { IconChevron } from '@/components/icons';
 import { counts, describe, humanise, type Inv, title } from '@/lib/specflow/describe';
 import type { Plan, PlanStep } from '@/lib/specflow/plan-types';
@@ -25,7 +26,9 @@ export function StateBadge({ state, questions }: { state: PlanState; questions?:
 }
 
 /** The plan as a change review: + new, ~ changed, = already there, ! can't do yet. */
-export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan', planId, canBuild = false }: { plan: Plan | null; errors: string[]; inventory: Inv; open?: boolean; heading?: string; planId?: string; canBuild?: boolean }) {
+export type BuildTarget = { instanceName: string; baseUrl: string; lastApply: LastBuild };
+
+export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan', planId, canBuild = false, target }: { plan: Plan | null; errors: string[]; inventory: Inv; open?: boolean; heading?: string; planId?: string; canBuild?: boolean; target?: BuildTarget }) {
   const steps = plan?.steps ?? [];
   // An update to something created in the same plan (e.g. setting the new ticket type's workflow) is one change, not two.
   const createdKey = (s: PlanStep) => `${s.object}:${(s.name ?? '').toLowerCase()}`;
@@ -150,20 +153,22 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
         </details>
       ) : null}
 
-      <div className="plan-foot">
-        <span>Nothing has been written to Halo.</span>
-        {state === 'ready' && canBuild && planId ? (
-          <a className="btn btn-primary btn-sm" href={`/api/plans/${planId}/download`} download>
-            Download for the builder
-          </a>
-        ) : state === 'ready' ? (
-          <button className="btn btn-primary btn-sm" type="button" disabled title="Building is part of the paid plans">
-            Build in Halo
-          </button>
-        ) : (
-          <StateBadge state={state} questions={plan?.questions?.length} />
-        )}
-      </div>
+      {state === 'ready' && canBuild && planId && target ? (
+        <div className="plan-foot plan-foot-build">
+          <BuildPanel planId={planId} instanceName={target.instanceName} baseUrl={target.baseUrl} lastApply={target.lastApply} titles={Object.fromEntries(steps.map((x) => [x.id, title(x, inventory)]))} />
+        </div>
+      ) : (
+        <div className="plan-foot">
+          <span>Nothing has been written to Halo.</span>
+          {state === 'ready' ? (
+            <button className="btn btn-primary btn-sm" type="button" disabled title="Building in Halo is part of the paid plans">
+              Build in Halo
+            </button>
+          ) : (
+            <StateBadge state={state} questions={plan?.questions?.length} />
+          )}
+        </div>
+      )}
     </details>
   );
 }

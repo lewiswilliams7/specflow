@@ -9,7 +9,10 @@ Marketing site for Specflow (HaloITSM configuration from plain English). The pro
 - Never commit `.env` or keys. Supabase service role and Resend keys are server-only (route handlers).
 - Pin dependency versions exactly. Keep `npm audit --omit=dev` clean.
 - Run `npm run build` before pushing.
-- The app is READ-ONLY towards Halo: `lib/specflow/halo.ts` has no write method. Don't add one until the builder
-  (with its dry-run gate, rule B1) moves here.
+- The app builds in Halo through `lib/specflow/build/` (shared with the spike's `spike/lib`). Every apply goes through
+  the dry-run gate (rule B1) and the Halo client has no delete. Building is gated by plan (`limits.builds`); Explore
+  can't build.
 - Planner and instance read are ports of the spike (`spike/plan.ts`, `spike/lib/inventory.ts`): change both together.
+- The builder and plan checks are copies of the spike's files: change them in the spike, then run
+  `node scripts/sync-builder.mjs`. `node scripts/sync-builder.mjs --check` fails on drift.
 - Every Halo address a user enters goes through `assertPublicHost` before the server calls it.

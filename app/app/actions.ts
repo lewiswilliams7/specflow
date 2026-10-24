@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { decrypt, encrypt } from '@/lib/crypto';
-import { assertPublicHost, haloReader, normaliseBaseUrl } from '@/lib/specflow/halo';
+import { assertPublicHost, haloClient, normaliseBaseUrl } from '@/lib/specflow/halo';
 import { readInventory } from '@/lib/specflow/inventory';
 import { getContext } from '@/lib/workspace';
 
@@ -33,7 +33,7 @@ export async function connectInstance(_: FormState, form: FormData): Promise<For
 
   try {
     await assertPublicHost(baseUrl);
-    await haloReader({ baseUrl, tenant, clientId, clientSecret }).token();
+    await haloClient({ baseUrl, tenant, clientId, clientSecret }).token();
   } catch (e) {
     return { error: msg(e) };
   }
@@ -62,7 +62,7 @@ async function loadInstance(id: string) {
   const ctx = await getContext();
   const { data: inst } = await ctx.supabase.from('instances').select('*').eq('id', id).eq('workspace_id', ctx.workspace.id).single();
   if (!inst) throw new Error('That instance isn’t in your workspace.');
-  const reader = haloReader({ baseUrl: inst.base_url, tenant: inst.tenant, clientId: inst.client_id, clientSecret: decrypt(inst.secret_ciphertext) });
+  const reader = haloClient({ baseUrl: inst.base_url, tenant: inst.tenant, clientId: inst.client_id, clientSecret: decrypt(inst.secret_ciphertext) });
   return { ...ctx, inst, reader };
 }
 
