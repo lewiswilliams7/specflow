@@ -122,7 +122,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   for (const c of st.add_actions ?? []) out.push(`add a "${ref(c.via)}" button on ${c.step} that goes to ${c.to_step}`);
   for (const c of st.retarget_actions ?? []) out.push(`make "${ref(c.via)}" on ${c.step} go to ${c.to_step}`);
   if (st.send_email) out.push(`email the requester "${ref(st.send_email)}" when it's pressed`);
-  for (const c of st.show_section_when ?? []) out.push(`show the section ${ref(c.group)} only when ${ref(c.field)} is ${list(c.equals.map((e) => `"${e}"`))}`);
+  for (const c of st.show_field_when ?? []) out.push(`show ${ref(c.field)} only when ${ref(c.when)} is "${c.equals}"`);
   if (st.subject) out.push(`set the subject to "${st.subject}"`);
   if (st.body) out.push('change the body');
   let text = out.length ? out.join('; ') : 'Update';
