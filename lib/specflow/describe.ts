@@ -45,6 +45,8 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
     if (!s) return id ?? '';
     return s.object === 'field' ? (s.action === 'create' ? s.label || s.name || '' : fieldLabel(inv, s.match?.name ?? s.name)) : s.name ?? s.match?.name ?? '';
   };
+  const stageWho = (a: NonNullable<PlanStep['approvers']>[number]) =>
+    'group' in a ? `${ref(a.group)}${a.min ? ` (${a.min} needed)` : ''}` : 'agent' in a ? ref(a.agent) : 'line_manager' in a ? 'line manager' : 'rules' in a ? `${a.rules.map((r) => `${ref(r.group ?? r.agent)} if ${ref(r.field)} is "${r.equals}"`).join(', ')} (otherwise approved automatically)` : 'chosen by the agent';
   const list = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
   const out: string[] = [];
 
@@ -60,7 +62,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
         out.push(`New section "${step.label ?? step.name}" with ${list((step.fields ?? []).map((f) => `${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`)) || 'no fields'}`);
         break;
       case 'approval_process':
-        out.push(`Approval in ${step.approvers?.length ?? 0} stage${step.approvers?.length === 1 ? '' : 's'}: ${list((step.approvers ?? []).map((a) => ('group' in a ? `${ref(a.group)}${a.min ? ` (${a.min} needed)` : ''}` : 'agent' in a ? ref(a.agent) : 'line_manager' in a ? 'line manager' : 'rules' in a ? `${a.rules.map((r) => `${ref(r.group ?? r.agent)} if ${ref(r.field)} is "${r.equals}"`).join(', ')} (otherwise approved automatically)` : 'chosen by the agent')))}`);
+        out.push(`Approval in ${step.approvers?.length ?? 0} stage${step.approvers?.length === 1 ? '' : 's'}: ${list((step.approvers ?? []).map(stageWho))}`);
         break;
       case 'sla':
         out.push(step.targets ? `Targets: ${Object.entries(step.targets).map(([k, v]) => `${k} ${v}`).join(', ')}` : `Resolve within ${step.resolve_days} days`);
@@ -102,6 +104,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   if (st.sla_action === 'hold') out.push('pause the SLA while in this status');
   if (st.insert_steps?.length) out.push(`add ${st.insert_steps.map((i) => stageText(i, ref)).join('; ')}. Old buttons that skipped past a new stage now lead into it (rule W5)`);
   if (st.department_of) out.push(`move to the same department as ${ref(st.department_of)}`);
+  if (st.add_stages?.length) out.push(`add ${st.add_stages.length === 1 ? 'a final stage' : 'final stages'}: ${list(st.add_stages.map(stageWho))}`);
   for (const c of st.add_actions ?? []) out.push(`add a "${ref(c.via)}" button on ${c.step} that goes to ${c.to_step}`);
   for (const c of st.retarget_actions ?? []) out.push(`make "${ref(c.via)}" on ${c.step} go to ${c.to_step}`);
   let text = out.length ? out.join('; ') : 'Update';
