@@ -13,7 +13,7 @@ export default async function Dashboard() {
   const { supabase, workspace, limits } = await getContext();
   const [{ data: instances }, { data: recent }] = await Promise.all([
     supabase.from('instances').select('id, name, base_url, status, inventory_at').eq('workspace_id', workspace.id).order('created_at'),
-    supabase.from('plans').select('id, request, created_at, errors, instances(name)').eq('workspace_id', workspace.id).order('created_at', { ascending: false }).limit(8),
+    supabase.from('threads').select('id, title, updated_at, instances(name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }).limit(8),
   ]);
   const full = limits.instances !== null && (instances?.length ?? 0) >= limits.instances;
 
@@ -84,15 +84,14 @@ export default async function Dashboard() {
 
       {recent?.length ? (
         <section className="panel" aria-labelledby="recent-h">
-          <h2 id="recent-h">Recent plans</h2>
+          <h2 id="recent-h">Recent conversations</h2>
           <ul className="list">
-            {recent.map((p) => (
-              <li key={p.id}>
+            {recent.map((t) => (
+              <li key={t.id}>
                 <div style={{ minWidth: 0 }}>
-                  <Link href={`/app/plans/${p.id}`}><b>{p.request.slice(0, 90)}{p.request.length > 90 ? '…' : ''}</b></Link>
-                  <div className="muted">{(p.instances as unknown as { name: string } | null)?.name} · {when(p.created_at)}</div>
+                  <Link href={`/app/threads/${t.id}`}><b>{t.title}</b></Link>
+                  <div className="muted">{(t.instances as unknown as { name: string } | null)?.name} · {when(t.updated_at)}</div>
                 </div>
-                <span className={`pill ${(p.errors as string[]).length ? 'bad' : 'ok'}`}>{(p.errors as string[]).length ? 'needs fixes' : 'ready to review'}</span>
               </li>
             ))}
           </ul>

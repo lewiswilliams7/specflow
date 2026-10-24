@@ -253,3 +253,27 @@ footer .row { display: flex; flex-wrap: wrap; justify-content: space-between; ga
 .plan-steps th { font: 500 0.72rem/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-top: 0; }
 .table-scroll { overflow-x: auto; }
 .bullets { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; }
+
+/* Conversation */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.thread { display: grid; gap: 28px; }
+.turn { display: grid; gap: 12px; }
+.bubble { border-radius: 14px; padding: 14px 16px; min-width: 0; }
+.bubble.user { justify-self: end; max-width: min(640px, 92%); background: var(--accent); color: var(--paper); white-space: pre-wrap; border-bottom-right-radius: 4px; }
+.bubble.planner { justify-self: stretch; background: var(--surface); border: 1px solid var(--rule); border-bottom-left-radius: 4px; display: grid; gap: 12px; }
+.bubble.planner.pending { color: var(--muted); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .bubble.planner.pending { animation: none; } }
+.questions { background: var(--accent-soft); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+.questions ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.bubble details > summary { cursor: pointer; font-weight: 600; }
+.plan-view { display: grid; gap: 14px; margin-top: 12px; }
+.change-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.change-list li { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--rule); align-items: baseline; }
+.change-list li:first-child { border-top: 0; }
+.change-list p { margin-top: 4px; }
+.composer { position: sticky; bottom: max(12px, env(safe-area-inset-bottom, 0px)); background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 12px; display: grid; gap: 8px; box-shadow: 0 12px 40px -24px rgba(15, 27, 46, 0.4); }
+.composer textarea { border: 0; background: transparent; resize: none; min-height: 72px; padding: 6px 8px; }
+.composer textarea:focus { outline: none; }
+.composer-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.composer-bar .muted { font-size: 0.8rem; }

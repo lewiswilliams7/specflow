@@ -13,7 +13,16 @@ import { type Plan, type PlanStep, refsOf } from './plan-types';
 export type Inventory = Awaited<ReturnType<typeof readInventory>>;
 const EXAMPLES = [onboarding, workflowTest, approvalTest2, tier1Test2];
 
-export function makePlanner(inventory: Inventory, request: string) {
+export type PlanContext = {
+  /** The signed-in person: "me" in a request means them. */
+  requester?: { email: string; name?: string };
+  /** Earlier turns of the conversation, oldest first: the user's messages and short notes of what was planned. */
+  history?: { role: 'user' | 'planner'; text: string }[];
+  /** The plan from the previous turn, to revise rather than start again. */
+  previous?: Plan | null;
+};
+
+export function makePlanner(inventory: Inventory, request: string, ctx: PlanContext = {}) {
   const workflowSteps = inventory.workflows_and_their_steps;
   const { details: _details, ...namesOnly } = inventory;
   // Halo's standard (non-CF) fields seen on forms and sections can be reused too, e.g. to make one mandatory.
@@ -83,18 +92,27 @@ export function makePlanner(inventory: Inventory, request: string) {
   - Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
   - SLA targets: use only priority names that appear in inventory.details.sla_targets.
   - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
-  - Questions: at most 4, only for decisions the customer must make that the inventory can't answer (e.g. a business rule the request leaves open). Never ask about something inventory.details shows. Still plan the rest.
+  - The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
+- A rule on a number (cost over £300, more than 10 users) can't use a number field yet: capture it as a dropdown of bands ("Under £300", "£300 or more") so the rule has something to test, and put the rule itself in unsupported until conditional approvals are supported.
+- Questions: at most 4, only for decisions the customer must make that the inventory can't answer (e.g. a business rule the request leaves open). Never ask about something inventory.details shows. Still plan the rest.
   - Be concise in names. Output JSON only.
 
   EXAMPLE PLANS (hand-written, proven on a real instance):
   ${examples}`;
 
+  const who = ctx.requester ? `REQUESTER: ${ctx.requester.name ? `${ctx.requester.name}, ` : ''}${ctx.requester.email}\n\n` : '';
+  const convo = ctx.history?.length
+    ? `CONVERSATION SO FAR (oldest first):\n${ctx.history.map((h) => `${h.role === 'user' ? 'USER' : 'PLANNER'}: ${h.text}`).join('\n')}\n\n`
+    : '';
+  const prev = ctx.previous
+    ? `PREVIOUS PLAN (revise it to reflect the LATEST message; return the complete updated plan, keep what still applies):\n${JSON.stringify(ctx.previous)}\n\n`
+    : '';
   const userMsg = (extra = '') => `INSTANCE INVENTORY (what already exists on this Halo):
-  ${JSON.stringify(inventory)}
+${JSON.stringify(inventory)}
 
-  REQUEST:
-  ${request}
-  ${extra}`;
+${who}${convo}${prev}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST'}:
+${request}
+${extra}`;
 
   const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group']);
   function validate(plan: Plan): string[] {
@@ -167,8 +185,8 @@ export function makePlanner(inventory: Inventory, request: string) {
 export type PlanResult = { plan: Plan | null; errors: string[]; model: string };
 
 /** Ask the model, check the plan, send the problems back once for a fix. Never touches Halo. */
-export async function generatePlan(inventory: Inventory, request: string): Promise<PlanResult> {
-  const { SYSTEM, userMsg, validate } = makePlanner(inventory, request);
+export async function generatePlan(inventory: Inventory, request: string, ctx: PlanContext = {}): Promise<PlanResult> {
+  const { SYSTEM, userMsg, validate } = makePlanner(inventory, request, ctx);
   let plan: Plan | null = null;
   let errors: string[] = [];
   let model = '';
@@ -187,6 +205,6 @@ export async function generatePlan(inventory: Inventory, request: string): Promi
     errors = validate(plan);
     if (!errors.length) break;
   }
-  if (plan) plan.request = request;
+  if (plan) plan.request = ctx.history?.length ? `${ctx.history.find((h) => h.role === 'user')?.text ?? ''}\n\n(Latest: ${request})` : request;
   return { plan, errors, model };
 }
