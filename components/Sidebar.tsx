@@ -27,8 +27,8 @@ export function Sidebar({ workspace, plan, email, instances, threads }: Props) {
     return () => window.removeEventListener('keydown', close);
   }, [open]);
 
-  const current = (href: string) => (path === href ? 'page' : undefined);
-  const newHref = instances.length === 1 ? `/app/instances/${instances[0].id}` : '/app';
+  const current = (href: string) => (path === href || (href !== '/app' && path.startsWith(`${href}/`)) ? 'page' : undefined);
+  const newHref = instances.length === 1 ? `/app/instances/${instances[0].id}` : instances.length ? '/app/instances' : '/app/instances/new';
 
   return (
     <>
@@ -60,7 +60,7 @@ export function Sidebar({ workspace, plan, email, instances, threads }: Props) {
             <span>Overview</span>
           </Link>
 
-          <div className="side-label">Halo instances</div>
+          <div className="side-label side-label-row"><span>Halo instances</span><Link href="/app/instances">Manage</Link></div>
           {instances.length ? (
             instances.map((i) => (
               <Link key={i.id} className="side-link" href={`/app/instances/${i.id}`} aria-current={current(`/app/instances/${i.id}`)}>
@@ -69,7 +69,7 @@ export function Sidebar({ workspace, plan, email, instances, threads }: Props) {
               </Link>
             ))
           ) : (
-            <Link className="side-link" href="/app">
+            <Link className="side-link" href="/app/instances/new">
               <IconPlus />
               <span>Connect an instance</span>
             </Link>

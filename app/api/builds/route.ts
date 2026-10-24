@@ -101,6 +101,10 @@ export async function POST(req: Request) {
         failure = e instanceof Error ? e.message : 'The build stopped unexpectedly.';
         lines.push(failure);
       }
+      // Halo refused the saved login: flag the instance so its pages point to the fix.
+      const all = [failure, ...(result?.problems ?? []), ...(result?.log ?? []).map((l) => l.error ?? '')].join('\n');
+      if (/rejected the saved client ID|stopped accepting the saved client ID/.test(all))
+        await supabase.from('instances').update({ status: 'failed', last_error: 'Halo rejected the saved client ID or secret. Update the connection with the current ones.' }).eq('id', inst.id);
       const status = !result ? 'failed' : result.refused ? 'refused' : result.stopped ? 'stopped' : result.ok ? 'succeeded' : 'failed';
       const summary = result ? summarise(result) : null;
       await supabase

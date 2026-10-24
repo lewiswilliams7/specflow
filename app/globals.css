@@ -396,3 +396,24 @@ textarea { resize: vertical; min-height: 96px; }
 .build-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; font-size: 13.5px; color: var(--ink-2); }
 .build .notice div { display: grid; gap: 4px; }
 .build .notice b { font-weight: 600; }
+
+/* ---------- tables ---------- */
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.table th { text-align: left; font-weight: 500; color: var(--ink-3); font-size: 12.5px; padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.table td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.table tbody tr:hover { background: var(--surface-2); }
+.cell-title { display: flex; align-items: center; gap: 10px; color: var(--ink); min-width: 0; }
+.cell-title:hover { text-decoration: none; }
+.cell-title span { display: grid; min-width: 0; }
+.cell-title b { font-weight: 500; }
+.cell-title small { color: var(--ink-3); font-size: 12.5px; }
+.cell-actions { text-align: right; white-space: nowrap; width: 1%; }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+.side-label-row { display: flex; align-items: center; justify-content: space-between; }
+.side-label-row a { font-size: 12px; color: var(--ink-3); }
+.side-label-row a:hover { color: var(--brand); }
+.banner-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; background: var(--danger-soft); color: var(--danger); font-size: 13.5px; border-bottom: 1px solid var(--line); }
+.banner-error span { flex: 1; min-width: 200px; }
+.page .banner-error { border: 0; border-radius: var(--r); }

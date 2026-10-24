@@ -1,8 +1,6 @@
 import Link from 'next/link';
-import { ActionForm } from '@/components/ActionForm';
 import { IconChat, IconServer } from '@/components/icons';
 import { getContext } from '@/lib/workspace';
-import { connectInstance } from './actions';
 
 // Run next to Halo UK instances and the Supabase project (London).
 export const preferredRegion = 'lhr1';
@@ -33,6 +31,10 @@ export default async function Overview() {
             <h2 id="instances-h">Halo instances</h2>
             <p>{limits.instances === null ? 'Unlimited on your plan.' : `${instances?.length ?? 0} of ${limits.instances} on your plan.`}</p>
           </div>
+          <span className="build-actions">
+            <Link className="btn btn-quiet btn-sm" href="/app/instances">Manage</Link>
+            {full ? null : <Link className="btn btn-secondary btn-sm" href="/app/instances/new">Connect an instance</Link>}
+          </span>
         </div>
         {instances?.length ? (
           <ul className="rows">
@@ -45,7 +47,7 @@ export default async function Overview() {
                 </div>
                 <span className={`badge ${i.status === 'connected' ? 'add' : i.status === 'failed' ? 'danger' : ''}`}>
                   <span className="dot" />
-                  {i.status === 'connected' ? 'Connected' : i.status === 'failed' ? 'Failed' : i.status}
+                  {i.status === 'connected' ? 'Connected' : i.status === 'failed' ? 'Needs attention' : 'Not tested'}
                 </span>
               </li>
             ))}
@@ -54,52 +56,11 @@ export default async function Overview() {
           <div className="empty">
             <IconServer />
             <b>No instances yet</b>
-            <span>Connect your first one below. A test or trial instance is the best place to start.</span>
+            <span>A test or trial instance is the best place to start.</span>
+            <Link className="btn btn-primary btn-sm" href="/app/instances/new">Connect an instance</Link>
           </div>
         )}
       </section>
-
-      {full ? null : (
-        <section className="card" aria-labelledby="connect-h">
-          <div className="card-head">
-            <div>
-              <h2 id="connect-h">Connect a Halo instance</h2>
-              <p>
-                In Halo, open Configuration, Integrations, Halo API and add an application using <b>Client ID and Secret (Services)</b> with access to read configuration.
-              </p>
-            </div>
-          </div>
-          <div className="card-body">
-            <ActionForm action={connectInstance} submit="Connect and test" pending="Connecting">
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="name">Name</label>
-                  <input id="name" name="name" placeholder="Acme test" required maxLength={80} />
-                </div>
-                <div className="field">
-                  <label htmlFor="base_url">Halo address</label>
-                  <input id="base_url" name="base_url" placeholder="acme.haloitsm.com" required />
-                </div>
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="client_id">Client ID</label>
-                  <input id="client_id" name="client_id" required autoComplete="off" />
-                </div>
-                <div className="field">
-                  <label htmlFor="client_secret">Client secret</label>
-                  <input id="client_secret" name="client_secret" type="password" required autoComplete="off" />
-                  <span className="hint">Stored encrypted. Only used to read configuration.</span>
-                </div>
-              </div>
-              <div className="field">
-                <label htmlFor="tenant">Tenant <span className="hint">(optional, only for hosted Halo with a tenant name)</span></label>
-                <input id="tenant" name="tenant" autoComplete="off" />
-              </div>
-            </ActionForm>
-          </div>
-        </section>
-      )}
 
       <section className="card" aria-labelledby="recent-h">
         <div className="card-head"><h2 id="recent-h">Recent conversations</h2></div>

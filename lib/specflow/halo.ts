@@ -13,6 +13,8 @@ export type HaloReader = { get: <T = unknown>(path: string, params?: Record<stri
 export function normaliseBaseUrl(input: string): string {
   const raw = input.trim().match(/^https?:\/\//i) ? input.trim() : `https://${input.trim()}`;
   const u = new URL(raw);
+  // Local test Halo only (plain http), never in production builds.
+  if (process.env.NODE_ENV !== 'production' && process.env.SPECFLOW_ALLOW_LOCAL_HALO === '1' && u.protocol === 'http:') return `http://${u.host}`;
   return `https://${u.host}`;
 }
 
@@ -37,6 +39,14 @@ export async function assertPublicHost(baseUrl: string): Promise<void> {
 }
 
 const RETRY = new Set([429, 502, 503, 504]);
+
+/** Halo refused the saved client ID or secret: the connection needs updating, retrying won't help. */
+export class HaloAuthError extends Error {
+  constructor(message = 'Halo rejected the saved client ID or secret. Update the connection with the current ones from Halo (Configuration, Integrations, Halo API).') {
+    super(message);
+    this.name = 'HaloAuthError';
+  }
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unknown>(path: string, body: unknown) => Promise<T>; token: () => Promise<string> } {
@@ -54,11 +64,16 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
         signal: AbortSignal.timeout(15_000),
       });
     // Ask for everything the API application allows; an application set to read-only may refuse "all", so fall back.
-    let res = await ask('all');
-    if (res.status === 400) res = await ask('read:all');
+    let res: Response;
+    try {
+      res = await ask('all');
+      if (res.status === 400) res = await ask('read:all');
+    } catch {
+      throw new Error(`Couldn't reach ${new URL(conn.baseUrl).host} to sign in. Check the address, or try again in a minute.`);
+    }
     const text = await res.text();
     if (!res.ok) {
-      if (res.status === 400 || res.status === 401) throw new Error('Halo rejected the client ID or secret. Check them in Halo: Configuration → Integrations → Halo API.');
+      if (res.status === 400 || res.status === 401) throw new HaloAuthError();
       throw new Error(`Halo sign-in failed (${res.status}).`);
     }
     const raw = JSON.parse(text) as Record<string, unknown>;
@@ -73,10 +88,12 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
     // Rule R1 (24 Oct): Halo answers 504/429/502/503 under load (seen on the first in-app read, Workflow/9).
     // Reads are safe to repeat, so retry with back-off, honouring Retry-After.
     for (let attempt = 1; ; attempt++) {
+      // Signing in sits outside the retry: a rejected secret fails at once instead of looking like a busy Halo.
+      const bearer = await token();
       let res: Response | null = null;
       try {
         res = await fetch(url, {
-          headers: { Authorization: `Bearer ${await token()}`, Accept: 'application/json' },
+          headers: { Authorization: `Bearer ${bearer}`, Accept: 'application/json' },
           redirect: 'error',
           signal: AbortSignal.timeout(45_000),
         });
@@ -87,6 +104,7 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
       }
       const text = await res.text();
       if (res.ok) return (text ? JSON.parse(text) : null) as T;
+      if (res.status === 401) throw new HaloAuthError('Halo stopped accepting the saved client ID or secret (401). Update the connection with the current ones.');
       if (RETRY.has(res.status) && attempt < 4) {
         const after = Number(res.headers.get('retry-after'));
         await sleep(Number.isFinite(after) && after > 0 ? Math.min(after, 20) * 1000 : 1000 * 2 ** attempt);
