@@ -1,34 +1,12 @@
 import { PilotForm } from '@/components/PilotForm';
 import { PlanPanel } from '@/components/PlanPanel';
 import { site } from '@/lib/site';
-
-function Mark() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-      <rect width="28" height="28" rx="7" fill="var(--accent)" />
-      <path d="M8 9.5h12M8 14h8M8 18.5h12" stroke="var(--paper)" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="20" cy="14" r="2" fill="var(--paper)" />
-    </svg>
-  );
-}
+import { SiteFooter, SiteHeader } from '@/components/SiteChrome';
 
 export default function Home() {
   return (
     <>
-      <header className="top">
-        <div className="wrap">
-          <a className="brand" href="#top" aria-label={`${site.name} home`}>
-            <Mark />
-            <b>{site.wordmark}</b>
-          </a>
-          <nav className="nav" aria-label="Main">
-            <a className="hide-sm" href="#how">How it works</a>
-            <a className="hide-sm" href="#builds">What it builds</a>
-            <a className="hide-sm" href="#safety">Safety</a>
-            <a className="btn btn-primary" href="#pilot">Apply for a pilot</a>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       <main id="top">
         <section className="hero">
@@ -44,10 +22,10 @@ export default function Home() {
                 it. Every change is checked after it&apos;s saved.
               </p>
               <div className="cta-row">
-                <a className="btn btn-primary" href="#pilot">Apply for a pilot</a>
-                <a className="btn btn-ghost" href="#how">See how it works</a>
+                <a className="btn btn-primary" href="/signup">Start free</a>
+                <a className="btn btn-ghost" href="#pilot">Apply for a pilot</a>
               </div>
-              <p className="fineprint">Paid pilots for Halo partners start in {site.pilotStart}.</p>
+              <p className="fineprint">Free to connect and generate plans. Building starts with our partner pilots in {site.pilotStart}. <a href="/pricing">See pricing</a></p>
             </div>
             <PlanPanel />
           </div>
@@ -215,15 +193,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer>
-        <div className="wrap">
-          <div className="row">
-            <span>© 2026 {site.name}. Made by {site.company}.</span>
-            <span>{site.location}</span>
-          </div>
-          <p>HaloITSM and HaloPSA are products of Halo Service Solutions. {site.name} is independent and not affiliated with or endorsed by Halo.</p>
-        </div>
-      </footer>
+      <SiteFooter />
     </>
   );
 }
