@@ -1,19 +1,32 @@
 /**
  * Planner model call: OPENAI_API_KEY (default gpt-5) or ANTHROPIC_API_KEY. PLANNER_MODEL overrides.
+ * OPENAI_BASE_URL points at an OpenAI-compatible endpoint (e.g. Azure OpenAI or a local mock for tests).
  * Same as the spike's lib/llm.ts, minus the test hook.
  */
-export async function complete(system: string, user: string): Promise<{ text: string; model: string }> {
+export type CompleteOptions = {
+  /** Reasoning effort for reasoning models. Revisions use 'low': the plan is already made. */
+  effort?: 'minimal' | 'low' | 'medium' | 'high';
+  /** Stop button: aborts the model call. */
+  signal?: AbortSignal;
+  /** Groups calls for OpenAI's prompt cache (same instance, same prefix). */
+  cacheKey?: string;
+};
+
+export async function complete(system: string, user: string, opts: CompleteOptions = {}): Promise<{ text: string; model: string }> {
   const override = process.env.PLANNER_MODEL?.trim();
   if (process.env.OPENAI_API_KEY) {
     const model = override || 'gpt-5';
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const base = (process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/$/, '');
+    const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      signal: opts.signal,
       body: JSON.stringify({
         model,
         response_format: { type: 'json_object' },
         // Reasoning models (gpt-5, o-series) only accept the default temperature.
-        ...(/^(gpt-5|o\d)/.test(model) ? {} : { temperature: 0.2 }),
+        ...(/^(gpt-5|o\d)/.test(model) ? (opts.effort ? { reasoning_effort: opts.effort } : {}) : { temperature: 0.2 }),
+        ...(opts.cacheKey ? { prompt_cache_key: opts.cacheKey } : {}),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -29,7 +42,9 @@ export async function complete(system: string, user: string): Promise<{ text: st
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 16000, system, messages: [{ role: 'user', content: user }] }),
+      signal: opts.signal,
+      // The system prompt is the same on every call: cache it.
+      body: JSON.stringify({ model, max_tokens: 16000, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: user }] }),
     });
     const json = (await res.json()) as { content?: { type: string; text?: string }[]; error?: { message?: string } };
     if (!res.ok) throw new Error(`The planner model returned an error (${res.status}): ${json.error?.message ?? 'unknown'}`);

@@ -8,6 +8,7 @@ import tier1Test2 from './examples/tier1-test-2.json';
 import workflowTest from './examples/workflow-test.json';
 import type { readInventory } from './inventory';
 import { complete, parseJsonReply } from './llm';
+import { planChecks } from './plan-checks';
 import { type Plan, type PlanStep, refsOf } from './plan-types';
 
 export type Inventory = Awaited<ReturnType<typeof readInventory>>;
@@ -20,6 +21,8 @@ export type PlanContext = {
   history?: { role: 'user' | 'planner'; text: string }[];
   /** The plan from the previous turn, to revise rather than start again. */
   previous?: Plan | null;
+  /** Questions asked on earlier turns (rule M7: never ask them again). */
+  askedBefore?: string[];
 };
 
 export function makePlanner(inventory: Inventory, request: string, ctx: PlanContext = {}) {
@@ -45,7 +48,7 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   const SYSTEM = `You plan Halo ITSM configuration changes. You output ONE JSON object (no prose) that a deterministic builder executes after a human approves it.
 
   THE BUILDER CAN ONLY DO THIS (anything else is unsupported):
-  Plan = { "request": string, "existing_coverage": [{ "requirement": string, "status": "built" | "partial" | "missing", "existing": string }], "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[] }
+  Plan = { "request": string, "reply": string, "existing_coverage": [{ "requirement": string, "status": "built" | "partial" | "missing", "existing": string }], "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[] }
   Every step: { "id": unique snake_case, "object": one of below, "action": "create" | "reuse" | "update" }
   - reuse: { "match": { "name": exact existing name from the inventory } }. Use for anything that already exists.
   - create needs "name". Optional "based_on": exact name of an existing record of the same kind to copy settings from (choose a sensible, plain one; say which in assumptions).
@@ -93,8 +96,11 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   - SLA targets: use only priority names that appear in inventory.details.sla_targets.
   - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
   - The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
-- A rule on a number (cost over £300, more than 10 users) can't use a number field yet: capture it as a dropdown of bands ("Under £300", "£300 or more") so the rule has something to test, and put the rule itself in unsupported until conditional approvals are supported.
-- Questions: at most 4, only for decisions the customer must make that the inventory can't answer (e.g. a business rule the request leaves open). Never ask about something inventory.details shows. Still plan the rest.
+  - A rule on a number (cost over £300, more than 10 users) is captured as its OWN new dropdown field holding only the bands ("Under £300", "£300 or more"), placed on the form. Never add band options to an existing field, and never mix the band into another answer ("Laptop (£300 or more)"). The rule itself (approve only when "£300 or more") goes in unsupported until conditional approvals are supported. (M5)
+  - When an approval should only happen under a condition that can't be built yet, do NOT attach the approval process to the ticket type: that sends every ticket for approval. Leave it off, put the conditional approval in unsupported, and explain in reply what the customer can do meanwhile. Only attach an approval that must run on every ticket, and then say so in an assumption starting "Every ticket of this type is approved by". (M6)
+  - Questions (M7): at most 4 on the first plan, at most 2 on a follow-up, and only for decisions that change what gets built and that the inventory can't answer. Never ask the user to confirm a name or detail they gave you. Never ask again something already asked in the conversation: use their answer. If they leave a choice to you ("either", "up to you", "don't mind"), choose the option that changes the least on their instance, state your choice in assumptions, and don't ask again. Still plan the rest.
+  - Write every text for the customer (reply, existing_coverage, unsupported, assumptions, questions) in plain English with field LABELS (inventory.details.custom_fields), never internal names like CFhardware.
+  - reply: one or two sentences, as a colleague would say them: what the plan does, and on a follow-up what you changed and why. No lists, no repeating the plan.
   - Be concise in names. Output JSON only.
 
   EXAMPLE PLANS (hand-written, proven on a real instance):
@@ -104,15 +110,14 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   const convo = ctx.history?.length
     ? `CONVERSATION SO FAR (oldest first):\n${ctx.history.map((h) => `${h.role === 'user' ? 'USER' : 'PLANNER'}: ${h.text}`).join('\n')}\n\n`
     : '';
-  const prev = ctx.previous
-    ? `PREVIOUS PLAN (revise it to reflect the LATEST message; return the complete updated plan, keep what still applies):\n${JSON.stringify(ctx.previous)}\n\n`
-    : '';
+  const prev = ctx.previous ? `CURRENT PLAN (shown to the user on the previous turn):\n${JSON.stringify(ctx.previous)}\n\n` : '';
+  const asked = ctx.askedBefore?.length ? `QUESTIONS ALREADY ASKED (the user has replied since; never ask these again):\n- ${ctx.askedBefore.join('\n- ')}\n\n` : '';
   const userMsg = (extra = '') => `INSTANCE INVENTORY (what already exists on this Halo):
 ${JSON.stringify(inventory)}
 
-${who}${convo}${prev}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST'}:
+${who}${convo}${prev}${asked}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST'}:
 ${request}
-${extra}`;
+${ctx.previous ? REVISE : ''}${extra}`;
 
   const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group']);
   function validate(plan: Plan): string[] {
@@ -139,7 +144,10 @@ ${extra}`;
         const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!));
         if (hit) errors.push(`${where}: field "${hit[0]}" already exists with the label "${s.label}": reuse it`);
       }
-      const twin = s.action === 'create' && s.name ? (NAMES_BY_OBJECT[s.object] ?? []).find((n) => n.length >= 6 && s.name!.toLowerCase().startsWith(n.toLowerCase()) && s.name!.length > n.length) : undefined;
+      // A near-copy is the same name plus a copy marker ("Joiner Workflow (People Ops)", "New Starter v2", "CFhardware2"),
+      // not a longer name that happens to share a prefix ("CFHardwareCostBand" is a different field from "CFhardware").
+      const copyMarker = (rest: string) => (s.object === 'field' ? /^(v?\d+|copy|new|old)$/i.test(rest) : /^[\s\-_(]/.test(rest));
+      const twin = s.action === 'create' && s.name ? (NAMES_BY_OBJECT[s.object] ?? []).find((n) => n.length >= 6 && s.name!.toLowerCase().startsWith(n.toLowerCase()) && s.name!.length > n.length && copyMarker(s.name!.slice(n.length))) : undefined;
       if (twin) errors.push(`${where}: "${s.name}" is a copy of the existing "${twin}": update "${twin}" instead`);
       if ((plan.questions?.length ?? 0) > 4 && s === plan.steps[0]) errors.push(`${plan.questions!.length} questions: keep at most 4, and drop any that inventory.details answers`);
       if (s.action === 'create' && s.name && / v\d+$|\(copy\)|\bcopy of\b/i.test(s.name))
@@ -177,6 +185,11 @@ ${extra}`;
     const used = new Set((plan.steps as PlanStep[]).flatMap((x) => refsOf(x)));
     for (const s of plan.steps as PlanStep[])
       if (s.action === 'create' && s.object !== 'ticket_type' && !used.has(s.id)) errors.push(`step "${s.id}": "${s.name}" is created but nothing uses it; attach it or drop it (ask in questions instead)`);
+    errors.push(...planChecks(plan, {
+      fieldDetails: inventory.details?.custom_fields as Record<string, string> | undefined,
+      userMessages: [...(ctx.history ?? []).filter((h) => h.role === 'user').map((h) => h.text), request],
+      askedBefore: ctx.askedBefore,
+    }));
     return errors;
   }
   return { SYSTEM, userMsg, validate };
@@ -184,20 +197,86 @@ ${extra}`;
 
 export type PlanResult = { plan: Plan | null; errors: string[]; model: string };
 
+/** A follow-up returns only what changes, so it comes back in seconds instead of re-writing the whole plan. */
+const REVISE = `
+THIS IS A FOLLOW-UP. Revise the CURRENT PLAN to reflect the LATEST message and change nothing else.
+Return ONLY this JSON (a patch, not the whole plan):
+{ "reply": string,
+  "remove_steps": [ids of current steps to drop],
+  "upsert_steps": [complete steps to add, or to replace the current step with the same id],
+  "existing_coverage": [only if it changed: the complete new list],
+  "unsupported": [the complete current list], "assumptions": [the complete current list], "questions": [the complete current list: usually fewer than before, never repeated] }
+If the message only answers questions, upsert nothing: drop the answered questions and record the answers in assumptions.
+`;
+
+type Patch = {
+  reply?: string;
+  remove_steps?: string[];
+  upsert_steps?: PlanStep[];
+  existing_coverage?: Plan['existing_coverage'];
+  unsupported?: string[];
+  assumptions?: string[];
+  questions?: string[];
+};
+
+/** Apply a revision patch, then order steps so every ref is defined before it is used. */
+export function applyPatch(base: Plan, patch: Patch): Plan {
+  const drop = new Set(patch.remove_steps ?? []);
+  const steps = base.steps.filter((s) => !drop.has(s.id)).map((s) => ({ ...s }));
+  for (const u of patch.upsert_steps ?? []) {
+    const at = steps.findIndex((s) => s.id === u.id);
+    if (at >= 0) steps[at] = u;
+    else steps.push(u);
+  }
+  const ordered: PlanStep[] = [];
+  const placed = new Set<string>();
+  const ids = new Set(steps.map((s) => s.id));
+  const visiting = new Set<string>();
+  const place = (s: PlanStep) => {
+    if (placed.has(s.id) || visiting.has(s.id)) return;
+    visiting.add(s.id);
+    for (const r of refsOf(s)) if (ids.has(r)) place(steps.find((x) => x.id === r)!);
+    visiting.delete(s.id);
+    placed.add(s.id);
+    ordered.push(s);
+  };
+  steps.forEach(place);
+  return {
+    ...base,
+    reply: patch.reply ?? '',
+    steps: ordered,
+    existing_coverage: patch.existing_coverage ?? base.existing_coverage,
+    unsupported: patch.unsupported ?? base.unsupported,
+    assumptions: patch.assumptions ?? base.assumptions,
+    questions: patch.questions ?? [],
+  };
+}
+
+export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
+export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string };
+
 /** Ask the model, check the plan, send the problems back once for a fix. Never touches Halo. */
-export async function generatePlan(inventory: Inventory, request: string, ctx: PlanContext = {}): Promise<PlanResult> {
+export async function generatePlan(inventory: Inventory, request: string, ctx: PlanContext = {}, opts: GenerateOptions = {}): Promise<PlanResult> {
   const { SYSTEM, userMsg, validate } = makePlanner(inventory, request, ctx);
+  const revising = Boolean(ctx.previous);
+  const effort = revising ? ((process.env.PLANNER_REVISE_EFFORT as 'low' | undefined) ?? 'low') : undefined;
   let plan: Plan | null = null;
   let errors: string[] = [];
   let model = '';
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const reply = await complete(
-      SYSTEM,
-      userMsg(attempt === 1 ? '' : `\nYOUR PREVIOUS PLAN HAD THESE ERRORS, return a corrected full plan:\n- ${errors.join('\n- ')}\n\nPREVIOUS PLAN:\n${JSON.stringify(plan)}`),
-    );
+    opts.onStage?.(attempt === 1 ? (revising ? 'revising' : 'planning') : 'fixing', attempt === 1 ? undefined : `${errors.length}`);
+    const extra =
+      attempt === 1
+        ? ''
+        : revising && plan
+          ? `\nYOUR REVISION HAD THESE PROBLEMS. Return a corrected patch against the CURRENT PLAN above:\n- ${errors.join('\n- ')}\n\nWHAT YOUR PATCH PRODUCED:\n${JSON.stringify(plan)}`
+          : `\nYOUR PREVIOUS PLAN HAD THESE ERRORS, return a corrected full plan:\n- ${errors.join('\n- ')}\n\nPREVIOUS PLAN:\n${JSON.stringify(plan)}`;
+    const reply = await complete(SYSTEM, userMsg(extra), { effort, signal: opts.signal, cacheKey: opts.cacheKey });
     model = reply.model;
+    opts.onStage?.('checking');
     try {
-      plan = parseJsonReply<Plan>(reply.text);
+      const parsed = parseJsonReply<Plan & Patch>(reply.text);
+      plan = revising && !Array.isArray(parsed.steps) ? applyPatch(ctx.previous!, parsed) : parsed;
     } catch {
       errors = ['The planner reply was not valid JSON.'];
       continue;

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { IconCheck } from '@/components/icons';
 import { SiteFooter, SiteHeader } from '@/components/SiteChrome';
 import { foundingOffer, plans } from '@/lib/pricing';
 import { site } from '@/lib/site';
@@ -11,10 +12,9 @@ export default function PricingPage() {
     <>
       <SiteHeader />
       <main>
-        <section className="band">
+        <section className="section" style={{ borderTop: 0 }}>
           <div className="wrap">
             <div className="section-head">
-              <p className="eyebrow">Launch pricing</p>
               <h1 className="page-title">Pay per Halo instance, not per plan</h1>
               <p>
                 Plans are free to generate. You pay when {site.name} builds, and the price follows how many Halo
@@ -23,9 +23,11 @@ export default function PricingPage() {
             </div>
             <div className="price-grid">
               {plans.map((p) => (
-                <article key={p.id} className={`price-card${p.highlight ? ' is-highlight' : ''}`}>
-                  {p.highlight ? <span className="tag">Made for partners</span> : null}
-                  <h2>{p.name}</h2>
+                <article key={p.id} className={`card price-card${p.highlight ? ' is-highlight' : ''}`}>
+                  <div className="row-between">
+                    <h2>{p.name}</h2>
+                    {p.highlight ? <span className="badge accent">Made for partners</span> : null}
+                  </div>
                   <p className="price">
                     <strong>{p.price}</strong> <span>{p.per}</span>
                   </p>
@@ -33,10 +35,10 @@ export default function PricingPage() {
                   <p className="price-summary">{p.summary}</p>
                   <ul>
                     {p.features.map((f) => (
-                      <li key={f}>{f}</li>
+                      <li key={f}><IconCheck />{f}</li>
                     ))}
                   </ul>
-                  <Link className={`btn ${p.highlight ? 'btn-primary' : 'btn-ghost'}`} href={p.id === 'partner' ? '/#pilot' : `/signup?plan=${p.id}`}>
+                  <Link className={`btn ${p.highlight ? 'btn-primary' : 'btn-secondary'}`} href={p.id === 'partner' ? '/#pilot' : `/signup?plan=${p.id}`}>
                     {p.cta}
                   </Link>
                 </article>

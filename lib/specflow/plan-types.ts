@@ -87,6 +87,8 @@ export type Approver =
 
 export interface Plan {
   request: string;
+  /** Planner output: one or two plain sentences to the user, as a colleague would say them. */
+  reply?: string;
   steps: PlanStep[];
   /** Planner output: parts of the request the builder can't do yet, in plain words. */
   /** What the instance already has for each part of the request, so the plan only builds the gap. */

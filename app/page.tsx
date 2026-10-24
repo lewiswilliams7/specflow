@@ -12,18 +12,15 @@ export default function Home() {
         <section className="hero">
           <div className="wrap">
             <div>
-              <p className="eyebrow">For HaloITSM and HaloPSA teams</p>
-              <h1>
-                Describe the process. Approve the plan. <em>{site.name} builds it in Halo.</em>
-              </h1>
+              <h1>Describe the process. Approve the plan. {site.name} builds it in Halo.</h1>
               <p className="lede">
                 Tell {site.name} what you need in plain English: the forms, approvals, SLAs and workflow stages. It reads
-                your instance, shows you exactly what it will create or change, and only builds once you&apos;ve approved
-                it. Every change is checked after it&apos;s saved.
+                your instance, shows exactly what it will create or change, and asks when something is unclear. Reply to
+                refine it, like a conversation with a colleague who knows Halo.
               </p>
               <div className="cta-row">
-                <a className="btn btn-primary" href="/signup">Start free</a>
-                <a className="btn btn-ghost" href="#pilot">Apply for a pilot</a>
+                <a className="btn btn-primary btn-lg" href="/signup">Start free</a>
+                <a className="btn btn-secondary btn-lg" href="#pilot">Apply for a pilot</a>
               </div>
               <p className="fineprint">Free to connect and generate plans. Building starts with our partner pilots in {site.pilotStart}. <a href="/pricing">See pricing</a></p>
             </div>
@@ -31,14 +28,14 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="band proof" aria-label="What we've proven">
+        <section className="section proof" aria-label="What we've proven">
           <div className="wrap">
             <div>
               <strong>47 objects</strong>
               <span>Built and checked in one run on a real Halo instance during testing: a full joiners, movers and leavers setup.</span>
             </div>
             <div>
-              <strong>60+ rules</strong>
+              <strong>65 rules</strong>
               <span>Halo quirks we&apos;ve found and fixed, so they never reach your instance. The list grows with every build.</span>
             </div>
             <div>
@@ -48,7 +45,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="band" id="how">
+        <section className="section" id="how">
           <div className="wrap">
             <div className="section-head">
               <h2>How it works</h2>
@@ -75,7 +72,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="band">
+        <section className="section">
           <div className="wrap">
             <div className="split">
               <div className="section-head">
@@ -86,37 +83,30 @@ export default function Home() {
                   updates what&apos;s nearly there, and only creates what&apos;s missing. No &ldquo;v2&rdquo; copies.
                 </p>
               </div>
-              <div className="coverage" aria-label="Example coverage check">
-                <div className="row">
-                  <span className="chip built">Built</span>
-                  <p>Mover form with required fields<span>Mover: name, new department and date required</span></p>
-                </div>
-                <div className="row">
-                  <span className="chip built">Built</span>
-                  <p>Leaver SLA, 4 hours for Critical<span>Leaver - 1 day, critical 4 hours</span></p>
-                </div>
-                <div className="row">
-                  <span className="chip update">Partial</span>
-                  <p>Joiner workflow stages<span>Has IT Provisioning and Facilities, missing HR checks</span></p>
-                </div>
-                <div className="row">
-                  <span className="chip gap">Missing</span>
-                  <p>Email the manager when a joiner is approved<span>Not supported yet: listed for your consultant</span></p>
+              <div className="plan-card" aria-label="Example: what's already there">
+                <div className="plan-section">
+                  <h3>Already in your Halo</h3>
+                  <ul className="diff">
+                    <li className="keep"><span className="sign">=</span><div className="what"><b>Mover form with required fields</b> <span className="kind">already there</span><p>Name, new department and date are required</p></div></li>
+                    <li className="keep"><span className="sign">=</span><div className="what"><b>Leaver SLA, 4 hours for Critical</b> <span className="kind">already there</span><p>Leaver: 1 day, Critical 4 hours</p></div></li>
+                    <li className="change"><span className="sign">~</span><div className="what"><b>Joiner workflow stages</b> <span className="kind">partly there</span><p>Has IT Provisioning and Facilities; HR checks will be added</p></div></li>
+                    <li className="cant"><span className="sign">!</span><div className="what"><b>Email the manager when a joiner is approved</b> <span className="kind">can’t do yet</span><p>Listed for your consultant instead of half-built</p></div></li>
+                  </ul>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="band" id="builds">
+        <section className="section" id="builds">
           <div className="wrap">
             <div className="section-head">
               <h2>What it builds today</h2>
               <p>The groundwork of most Halo implementations. We&apos;d rather tell you what&apos;s not covered than build it badly.</p>
             </div>
             <div className="remit">
-              <div>
-                <h3><span className="dot yes" aria-hidden="true" />Builds and updates</h3>
+              <div className="card">
+                <h3><span className="badge add">Builds</span>Builds and updates</h3>
                 <ul>
                   <li>Custom fields <span>text, memo, date, dropdown, multi-select, checkbox</span></li>
                   <li>Forms and sections, with required fields</li>
@@ -127,8 +117,8 @@ export default function Home() {
                   <li>Teams and approval groups, with members</li>
                 </ul>
               </div>
-              <div>
-                <h3><span className="dot not" aria-hidden="true" />Not yet</h3>
+              <div className="card">
+                <h3><span className="badge cant">Not yet</span>Listed for your consultant</h3>
                 <ul>
                   <li>Fields that only show for certain answers</li>
                   <li>Approvals or routing that depend on a field&apos;s value</li>
@@ -142,7 +132,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="band" id="safety">
+        <section className="section" id="safety">
           <div className="wrap">
             <div className="section-head">
               <h2>Built for instances people rely on</h2>
@@ -158,13 +148,13 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="band partners">
+        <section className="section partners">
           <div className="wrap">
             <div className="section-head">
               <h2>For Halo partners: your standard build, on every new client</h2>
               <p>Most implementations start with the same groundwork. Save your firm&apos;s build once, then apply it to each new client&apos;s instance in under an hour, matched to what they already have.</p>
             </div>
-            <div className="pack">
+            <div className="card pack">
               <h3>A build pack, applied to a new client</h3>
               <ol>
                 <li>Pick your firm&apos;s standard pack: service request forms, approvals, SLAs.</li>
@@ -172,12 +162,12 @@ export default function Home() {
                 <li>You review the plan with the client, then build.</li>
                 <li>The sign-off report goes straight into your project file.</li>
               </ol>
-              <span className="tag">Part of the pilot</span>
+              <span className="badge accent">Part of the pilot</span>
             </div>
           </div>
         </section>
 
-        <section className="band pilot" id="pilot">
+        <section className="section pilot" id="pilot">
           <div className="wrap">
             <div className="section-head">
               <h2>Apply for a pilot</h2>

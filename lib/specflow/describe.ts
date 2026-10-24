@@ -29,14 +29,15 @@ export function sectionUsedBy(inv: Inv, section?: string): string[] {
 
 export function title(step: PlanStep, inv: Inv): string {
   const name = step.name ?? step.match?.name ?? '';
-  return step.object === 'field' ? fieldLabel(inv, name) || step.label || name : step.label && step.object === 'field_group' ? `${name}` : name;
+  if (step.object === 'field') return step.action === 'create' ? step.label || name : fieldLabel(inv, name) || step.label || name;
+  return name;
 }
 
 export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   const ref = (id?: string) => {
     const s = plan.steps.find((x) => x.id === id);
     if (!s) return id ?? '';
-    return s.object === 'field' ? fieldLabel(inv, s.name ?? s.match?.name) || s.label || '' : s.name ?? s.match?.name ?? '';
+    return s.object === 'field' ? (s.action === 'create' ? s.label || s.name || '' : fieldLabel(inv, s.match?.name ?? s.name)) : s.name ?? s.match?.name ?? '';
   };
   const list = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
   const out: string[] = [];
@@ -112,4 +113,33 @@ export function counts(plan: Plan | null) {
     cant: plan?.unsupported?.length ?? 0,
     questions: plan?.questions?.length ?? 0,
   };
+}
+
+/** Swap internal field names in planner text for their labels: "CFhardwareRequired" → "Do you require hardware…". */
+export function humanise(text: string, inv: Inv): string {
+  return text.replace(/\bCF[A-Za-z0-9_]+\b/g, (name) => {
+    const label = fieldLabel(inv, name);
+    return label === name ? name : `“${label}”`;
+  });
+}
+
+export type PlanDiff = { added: string[]; removed: string[]; changed: string[] };
+
+/** What changed between two versions of a plan, in plain words. Steps are matched by what they touch, not by id. */
+export function diffPlans(before: Plan | null, after: Plan | null, inv: Inv): PlanDiff | null {
+  if (!before || !after) return null;
+  const key = (s: PlanStep) => `${s.object}:${(s.name ?? s.match?.name ?? '').toLowerCase()}:${s.action === 'reuse' ? 'reuse' : 'change'}`;
+  // Compare what the step says in plain words (refs resolved to names), so a swapped team or SLA shows as a change.
+  const said = (s: PlanStep, plan: Plan) => `${title(s, inv)}|${describe(s, plan, inv)}`;
+  const label = (s: PlanStep) => `${OBJECT[s.object]} ${title(s, inv)}`.replace(/^./, (c) => c.toUpperCase());
+  const was = new Map(before.steps.filter((s) => s.action !== 'reuse').map((s) => [key(s), s]));
+  const now = new Map(after.steps.filter((s) => s.action !== 'reuse').map((s) => [key(s), s]));
+  const diff: PlanDiff = { added: [], removed: [], changed: [] };
+  for (const [k, s] of now) {
+    const old = was.get(k);
+    if (!old) diff.added.push(label(s));
+    else if (said(old, before) !== said(s, after)) diff.changed.push(label(s));
+  }
+  for (const [k, s] of was) if (!now.has(k)) diff.removed.push(label(s));
+  return diff;
 }
