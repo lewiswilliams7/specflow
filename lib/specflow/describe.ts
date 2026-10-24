@@ -33,6 +33,12 @@ export function title(step: PlanStep, inv: Inv): string {
   return name;
 }
 
+/** One new stage, with where it sits and the buttons in and out: "Pre-checks" after Request Fulfilment (in: Checks Done; out: Resolve Ticket to Closed). */
+export function stageText(ins: { name: string; after_step: string; enter_via: string; exits: { via: string; to_step: string }[] }, ref: (id?: string) => string): string {
+  const outs = ins.exits.map((e) => `${ref(e.via)} to ${e.to_step}`).join(', ');
+  return `"${ins.name}" after ${ins.after_step} (in: ${ref(ins.enter_via)}; out: ${outs || 'none'})`;
+}
+
 export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   const ref = (id?: string) => {
     const s = plan.steps.find((x) => x.id === id);
@@ -60,7 +66,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
         out.push(step.targets ? `Targets: ${Object.entries(step.targets).map(([k, v]) => `${k} ${v}`).join(', ')}` : `Resolve within ${step.resolve_days} days`);
         break;
       case 'workflow':
-        out.push(`Copy of "${step.copy_of}"${step.insert_steps?.length ? `, adding stages ${list(step.insert_steps.map((i) => `"${i.name}"`))}` : ''}`);
+        out.push(`Copy of "${step.copy_of}"${step.insert_steps?.length ? `, adding ${step.insert_steps.map((i) => stageText(i, ref)).join('; ')}` : ''}`);
         break;
       case 'ticket_type':
         out.push(`New ticket type${step.based_on ? ` copied from "${step.based_on}"` : ''}${step.fields?.length ? `, fields ${list(step.fields.map((f) => `${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`))}` : ''}${step.groups?.length ? `, sections ${list(step.groups.map(ref))}` : ''}${step.team ? `, team ${ref(step.team)}` : ''}${step.sla ? `, SLA ${ref(step.sla)}` : ''}${step.approval ? `, approval ${ref(step.approval)}` : ''}`);
@@ -94,7 +100,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   if (st.label) out.push(`rename to "${st.label}"`);
   if (st.add_members?.length) out.push(`add ${list(st.add_members.map(ref))}`);
   if (st.sla_action === 'hold') out.push('pause the SLA while in this status');
-  if (st.insert_steps?.length) out.push(`add stages ${list(st.insert_steps.map((i) => `"${i.name}"`))}`);
+  if (st.insert_steps?.length) out.push(`add ${st.insert_steps.map((i) => stageText(i, ref)).join('; ')}. Old buttons that skipped past a new stage now lead into it (rule W5)`);
   if (st.department_of) out.push(`move to the same department as ${ref(st.department_of)}`);
   let text = out.length ? out.join('; ') : 'Update';
   text = text.charAt(0).toUpperCase() + text.slice(1) + '.';

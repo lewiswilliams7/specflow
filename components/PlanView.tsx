@@ -1,6 +1,6 @@
 import { BuildPanel, type LastBuild } from '@/components/BuildPanel';
 import { IconChevron } from '@/components/icons';
-import { counts, describe, humanise, type Inv, title } from '@/lib/specflow/describe';
+import { counts, describe, humanise, type Inv, stageText, title } from '@/lib/specflow/describe';
 import type { Plan, PlanStep } from '@/lib/specflow/plan-types';
 
 const KIND: Record<PlanStep['object'], string> = {
@@ -44,8 +44,9 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
     if (!plan) return '';
     // A new workflow with stages added over several steps reads as one list, in order.
     if (s.object === 'workflow') {
-      const stages = [...(s.insert_steps ?? []), ...(folded.get(s.id) ?? []).flatMap((u) => u.set?.insert_steps ?? [])].map((i) => `"${i.name}"`);
-      if (stages.length) return `Copy of "${s.copy_of}", adding stages ${stages.length < 3 ? stages.join(' and ') : `${stages.slice(0, -1).join(', ')} and ${stages.at(-1)}`}.`;
+      const ref = (id?: string) => { const x = steps.find((y) => y.id === id); return x ? title(x, inventory) : id ?? ''; };
+      const stages = [...(s.insert_steps ?? []), ...(folded.get(s.id) ?? []).flatMap((u) => u.set?.insert_steps ?? [])].map((i) => stageText(i, ref));
+      if (stages.length) return `Copy of "${s.copy_of}", adding ${stages.join('; ')}. Old buttons that skipped past a new stage now lead into it (rule W5).`;
     }
     const extra = (folded.get(s.id) ?? []).map((u) => describe(u, plan, inventory).replace(/\.$/, '')).map((t) => t.charAt(0).toLowerCase() + t.slice(1));
     const base = describe(s, plan, inventory);
