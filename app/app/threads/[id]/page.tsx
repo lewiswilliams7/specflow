@@ -4,6 +4,7 @@ import type { LastBuild } from '@/components/BuildPanel';
 import { Conversation, type TurnView } from '@/components/Conversation';
 import { IconChevron } from '@/components/icons';
 import { PlannerTurn } from '@/components/PlannerTurn';
+import { StaleNotice } from '@/components/StaleNotice';
 import type { Inv } from '@/lib/specflow/describe';
 import type { Plan } from '@/lib/specflow/plan-types';
 import { getContext } from '@/lib/workspace';
@@ -15,7 +16,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
   const { supabase, workspace, limits } = await getContext();
   const { data: thread } = await supabase
     .from('threads')
-    .select('id, title, instance_id, instances(name, base_url, inventory)')
+    .select('id, title, instance_id, instances(name, base_url, inventory, inventory_at)')
     .eq('id', id)
     .eq('workspace_id', workspace.id)
     .single();
@@ -26,7 +27,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
     .eq('thread_id', id)
     .is('superseded_at', null)
     .order('created_at');
-  const inst = thread.instances as unknown as { name: string; base_url: string; inventory: Inv } | null;
+  const inst = thread.instances as unknown as { name: string; base_url: string; inventory: Inv; inventory_at: string | null } | null;
   // Last apply per plan version, for "Last built …" under the plan.
   const { data: builds } = await supabase.from('builds').select('plan_id, status, summary, started_at').eq('thread_id', id).eq('mode', 'apply').order('started_at', { ascending: false });
   const lastApply = new Map<string, LastBuild>();
@@ -39,7 +40,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
     const view: TurnView = {
       id: r.id,
       message: r.message ?? r.request,
-      planner: <PlannerTurn plan={plan} errors={(r.errors as string[]) ?? []} previous={previous} inventory={inventory} latest={i === all.length - 1} planId={r.id} canBuild={limits.builds} target={{ instanceName: inst?.name ?? 'Halo', baseUrl: inst?.base_url ?? '', lastApply: lastApply.get(r.id) ?? null }} />,
+      planner: <PlannerTurn plan={plan} errors={(r.errors as string[]) ?? []} previous={previous} inventory={inventory} latest={i === all.length - 1} planId={r.id} canBuild={limits.builds} target={{ instanceId: thread.instance_id, instanceName: inst?.name ?? 'Halo', baseUrl: inst?.base_url ?? '', lastApply: lastApply.get(r.id) ?? null }} />,
     };
     if (plan) previous = plan;
     return view;
@@ -54,6 +55,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
         </nav>
         <h1 title={thread.title}>{thread.title}</h1>
       </header>
+      <StaleNotice instanceId={thread.instance_id} inventoryAt={inst?.inventory_at ?? null} />
       <Conversation
         instanceId={thread.instance_id}
         threadId={thread.id}

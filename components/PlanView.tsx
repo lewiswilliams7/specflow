@@ -26,7 +26,7 @@ export function StateBadge({ state, questions }: { state: PlanState; questions?:
 }
 
 /** The plan as a change review: + new, ~ changed, = already there, ! can't do yet. */
-export type BuildTarget = { instanceName: string; baseUrl: string; lastApply: LastBuild };
+export type BuildTarget = { instanceId: string; instanceName: string; baseUrl: string; lastApply: LastBuild };
 
 export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan', planId, canBuild = false, target }: { plan: Plan | null; errors: string[]; inventory: Inv; open?: boolean; heading?: string; planId?: string; canBuild?: boolean; target?: BuildTarget }) {
   const steps = plan?.steps ?? [];
@@ -42,6 +42,11 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
   const changes = steps.filter((s) => s.action !== 'reuse' && !foldInto(s));
   const says = (s: PlanStep) => {
     if (!plan) return '';
+    // A new workflow with stages added over several steps reads as one list, in order.
+    if (s.object === 'workflow') {
+      const stages = [...(s.insert_steps ?? []), ...(folded.get(s.id) ?? []).flatMap((u) => u.set?.insert_steps ?? [])].map((i) => `"${i.name}"`);
+      if (stages.length) return `Copy of "${s.copy_of}", adding stages ${stages.length < 3 ? stages.join(' and ') : `${stages.slice(0, -1).join(', ')} and ${stages.at(-1)}`}.`;
+    }
     const extra = (folded.get(s.id) ?? []).map((u) => describe(u, plan, inventory).replace(/\.$/, '')).map((t) => t.charAt(0).toLowerCase() + t.slice(1));
     const base = describe(s, plan, inventory);
     return extra.length ? `${base.replace(/\.$/, '')}; ${extra.join('; ')}.` : base;
@@ -155,7 +160,7 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
 
       {state === 'ready' && canBuild && planId && target ? (
         <div className="plan-foot plan-foot-build">
-          <BuildPanel planId={planId} instanceName={target.instanceName} baseUrl={target.baseUrl} lastApply={target.lastApply} titles={Object.fromEntries(steps.map((x) => [x.id, title(x, inventory)]))} />
+          <BuildPanel planId={planId} instanceId={target.instanceId} instanceName={target.instanceName} baseUrl={target.baseUrl} lastApply={target.lastApply} titles={Object.fromEntries(steps.map((x) => [x.id, title(x, inventory)]))} />
         </div>
       ) : (
         <div className="plan-foot">

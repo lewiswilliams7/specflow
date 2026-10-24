@@ -111,7 +111,13 @@ export async function POST(req: Request) {
         .from('builds')
         .update({ status, summary, log: result?.log ?? [], lines, finished_at: new Date().toISOString() })
         .eq('id', build.id);
-      send({ type: 'done', build_id: build.id, status, summary, problems: result?.problems ?? (failure ? [failure] : []) });
+      // Every reason the build can't go ahead, by step, so the page can say it in plain words at the top.
+      const issues = [
+        ...(result?.problems ?? []).map((text) => ({ step: '', text })),
+        ...(result?.log ?? []).flatMap((l) => [...(l.error ? [{ step: l.step, text: l.error.split('\n')[0] }] : []), ...l.warnings.map((text) => ({ step: l.step, text }))]),
+        ...(failure ? [{ step: '', text: failure }] : []),
+      ];
+      send({ type: 'done', build_id: build.id, status, summary, problems: issues });
       try {
         controller.close();
       } catch {

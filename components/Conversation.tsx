@@ -60,6 +60,17 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
     end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [turns.length, pending?.message]);
 
+  // "Ask Specflow to fix this" on a blocked build puts the problems in the box, ready to send.
+  useEffect(() => {
+    const fill = (e: Event) => {
+      setDraft((e as CustomEvent<string>).detail);
+      setTimeout(() => box.current?.focus(), 0);
+      box.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    };
+    window.addEventListener('specflow:reply', fill);
+    return () => window.removeEventListener('specflow:reply', fill);
+  }, []);
+
   // Grow the box with its content.
   useLayoutEffect(() => {
     const el = box.current;

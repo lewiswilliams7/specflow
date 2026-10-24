@@ -2,15 +2,18 @@
 
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
+import { scanInstance } from '@/app/app/actions';
 import { IconAlert, IconCheck } from '@/components/icons';
 
 type Entry = { step: string; object: string; name: string; outcome: string; id?: unknown; warnings: string[]; detail?: string; error?: string };
 type Summary = { created: number; updated: number; would_create: number; would_update: number; reused: number; failed: number; warnings: number; dropdowns_created: number };
-type Done = { build_id: string; status: 'succeeded' | 'failed' | 'refused' | 'stopped'; summary: Summary | null; problems: string[] };
+type Issue = { step: string; text: string };
+type Done = { build_id: string; status: 'succeeded' | 'failed' | 'refused' | 'stopped'; summary: Summary | null; problems: Issue[] };
 export type LastBuild = { status: string; summary: Summary | null; started_at: string } | null;
 
 type Props = {
   planId: string;
+  instanceId: string;
   instanceName: string;
   baseUrl: string;
   /** Plain names for each step id ("Hardware cost" rather than CFHardwareCostBand). */
@@ -46,7 +49,7 @@ function haloError(raw: string): string {
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 
 /** Build a ready plan in Halo: preview what will change, then apply, with live progress and a report. */
-export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }: Props) {
+export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, lastApply }: Props) {
   const router = useRouter();
   const [mode, setMode] = useState<'idle' | 'preview' | 'apply'>('idle');
   const [running, setRunning] = useState(false);
@@ -56,6 +59,17 @@ export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }:
   const [done, setDone] = useState<Done | null>(null);
   const [error, setError] = useState('');
   const abort = useRef<AbortController | null>(null);
+  const [refresh, setRefresh] = useState<'' | 'running' | 'done' | string>('');
+
+  /** After a build, re-read the instance so the next plan knows what now exists. */
+  async function reread() {
+    setRefresh('running');
+    const fd = new FormData();
+    fd.set('instance_id', instanceId);
+    const r = await scanInstance({}, fd).catch((e: Error) => ({ error: e.message }));
+    setRefresh(r.error ? `Couldn’t re-read ${instanceName}: ${r.error}` : 'done');
+    router.refresh();
+  }
 
   async function run(next: 'preview' | 'apply') {
     setMode(next);
@@ -75,6 +89,7 @@ export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }:
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let finalStatus = '';
       for (;;) {
         const chunk = await reader.read();
         if (chunk.done) break;
@@ -90,10 +105,15 @@ export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }:
             setTotal(ev.total ?? 0);
             setEntries((xs) => [...xs, ev.entry!]);
           }
+          if (ev.type === 'done') finalStatus = ev.status ?? '';
           if (ev.type === 'done') setDone({ build_id: ev.build_id!, status: ev.status!, summary: ev.summary ?? null, problems: ev.problems ?? [] });
         }
       }
-      if (next === 'apply') router.refresh();
+      if (next === 'apply') {
+        router.refresh();
+        // Something was written (fully or partly): refresh what Specflow knows about the instance.
+        if (finalStatus === 'succeeded' || finalStatus === 'failed' || finalStatus === 'stopped') void reread();
+      }
     } catch (e) {
       if ((e as Error).name === 'AbortError') setError(next === 'apply' ? 'Stopped. Steps already finished were written and checked; build again to finish the rest.' : 'Preview stopped.');
       else setError((e as Error).message || 'Something went wrong.');
@@ -105,6 +125,12 @@ export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }:
 
   const problems = done?.problems ?? [];
   const blocked = mode === 'preview' && done && (problems.length || entries.some((e) => e.outcome === 'failed' || e.warnings.length));
+  const said = (i: Issue) => `${i.step ? `${titles[i.step] ?? i.step}: ` : ''}${haloError(i.text)}`;
+  /** Hand the problems back to the conversation, so the planner fixes the plan. */
+  const askToFix = () => {
+    const text = `The build preview stopped. Fix the plan for these, changing nothing else:\n${problems.map((i) => `- ${said(i)}`).join('\n')}`;
+    window.dispatchEvent(new CustomEvent('specflow:reply', { detail: text }));
+  };
   const s = done?.summary;
 
   if (mode === 'idle') {
@@ -165,9 +191,12 @@ export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }:
           <div className="notice error">
             <IconAlert />
             <div>
-              <b>This plan can’t be built yet. Nothing was written.</b>
-              {problems.map((p) => <div key={p}>{p}</div>)}
-              <div>Reply in the conversation to fix it, or check the instance and preview again.</div>
+              <b>Can’t build this yet: {problems.length === 1 ? '1 problem' : `${problems.length} problems`}. Nothing was written.</b>
+              <ul className="issue-list">{problems.map((i) => <li key={i.step + i.text}>{said(i)}</li>)}</ul>
+              <div className="build-actions">
+                <button className="btn btn-primary btn-sm" type="button" onClick={askToFix}>Ask Specflow to fix this</button>
+                <button className="btn btn-quiet btn-sm" type="button" onClick={() => run('preview')}>Preview again</button>
+              </div>
             </div>
           </div>
         ) : (
@@ -191,14 +220,18 @@ export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }:
               <b>Built in {instanceName}: {s?.created ?? 0} created, {s?.updated ?? 0} changed, all checked after saving.</b>
               {s?.dropdowns_created ? <div>New dropdown options can need a log-out and back in before they show in Halo (rule U1b).</div> : null}
               <div><a href={baseUrl} target="_blank" rel="noreferrer">Open Halo</a></div>
+              <div className="subtle">
+                {refresh === 'running' ? `Updating what Specflow knows about ${instanceName}, so the next plan reuses what was just built…` : refresh === 'done' ? `Specflow’s copy of ${instanceName} is up to date.` : refresh}
+              </div>
             </div>
           </div>
         ) : done.status === 'refused' ? (
           <div className="notice error">
             <IconAlert />
             <div>
-              <b>Not applied: the check before writing found a problem. Nothing was written.</b>
-              {problems.map((p) => <div key={p}>{p}</div>)}
+              <b>Not applied: the check before writing found {problems.length === 1 ? 'a problem' : `${problems.length} problems`}. Nothing was written.</b>
+              <ul className="issue-list">{problems.map((i) => <li key={i.step + i.text}>{said(i)}</li>)}</ul>
+              <div className="build-actions"><button className="btn btn-primary btn-sm" type="button" onClick={askToFix}>Ask Specflow to fix this</button></div>
             </div>
           </div>
         ) : (
@@ -206,7 +239,9 @@ export function BuildPanel({ planId, instanceName, baseUrl, titles, lastApply }:
             <IconAlert />
             <div>
               <b>{done.status === 'stopped' ? 'Stopped' : 'Stopped at the first failure'}.</b>
+              {problems.length ? <ul className="issue-list">{problems.map((i) => <li key={i.step + i.text}>{said(i)}</li>)}</ul> : null}
               <div>Steps before it were written and checked. Fix the problem, then build again: finished steps are skipped.</div>
+              {done.status === 'failed' && problems.length ? <div className="build-actions"><button className="btn btn-secondary btn-sm" type="button" onClick={askToFix}>Ask Specflow to fix this</button></div> : null}
             </div>
           </div>
         )

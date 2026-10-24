@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/ActionForm';
 import { Conversation } from '@/components/Conversation';
+import { StaleNotice } from '@/components/StaleNotice';
 import { IconAlert, IconChat, IconCheck, IconSettings } from '@/components/icons';
 import { getContext } from '@/lib/workspace';
 import { scanInstance } from '../../actions';
@@ -107,6 +108,7 @@ export default async function InstancePage({ params, searchParams }: { params: P
         </Link>
       </header>
       {failed}
+      <StaleNotice instanceId={inst.id} inventoryAt={inst.inventory_at} />
       <Conversation
         instanceId={inst.id}
         turns={[]}
