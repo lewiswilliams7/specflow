@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { scanInstance } from '@/app/app/actions';
 import { IconAlert, IconCheck } from '@/components/icons';
+import { site } from '@/lib/site';
 
 type Entry = { step: string; object: string; name: string; outcome: string; id?: unknown; warnings: string[]; detail?: string; error?: string };
 type Summary = { created: number; updated: number; would_create: number; would_update: number; reused: number; failed: number; warnings: number; dropdowns_created: number };
@@ -111,7 +112,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
       }
       if (next === 'apply') {
         router.refresh();
-        // Something was written (fully or partly): refresh what Specflow knows about the instance.
+        // Something was written (fully or partly): refresh what the app knows about the instance.
         if (finalStatus === 'succeeded' || finalStatus === 'failed' || finalStatus === 'stopped') void reread();
       }
     } catch (e) {
@@ -194,7 +195,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
               <b>Can’t build this yet: {problems.length === 1 ? '1 problem' : `${problems.length} problems`}. Nothing was written.</b>
               <ul className="issue-list">{problems.map((i) => <li key={i.step + i.text}>{said(i)}</li>)}</ul>
               <div className="build-actions">
-                <button className="btn btn-primary btn-sm" type="button" onClick={askToFix}>Ask Specflow to fix this</button>
+                <button className="btn btn-primary btn-sm" type="button" onClick={askToFix}>Ask {site.name} to fix this</button>
                 <button className="btn btn-quiet btn-sm" type="button" onClick={() => run('preview')}>Preview again</button>
               </div>
             </div>
@@ -221,7 +222,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
               {s?.dropdowns_created ? <div>New dropdown options can need a log-out and back in before they show in Halo (rule U1b).</div> : null}
               <div><a href={baseUrl} target="_blank" rel="noreferrer">Open Halo</a></div>
               <div className="subtle">
-                {refresh === 'running' ? `Updating what Specflow knows about ${instanceName}, so the next plan reuses what was just built…` : refresh === 'done' ? `Specflow’s copy of ${instanceName} is up to date.` : refresh}
+                {refresh === 'running' ? `Updating what ${site.name} knows about ${instanceName}, so the next plan reuses what was just built…` : refresh === 'done' ? `${site.name}’s copy of ${instanceName} is up to date.` : refresh}
               </div>
             </div>
           </div>
@@ -231,7 +232,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
             <div>
               <b>Not applied: the check before writing found {problems.length === 1 ? 'a problem' : `${problems.length} problems`}. Nothing was written.</b>
               <ul className="issue-list">{problems.map((i) => <li key={i.step + i.text}>{said(i)}</li>)}</ul>
-              <div className="build-actions"><button className="btn btn-primary btn-sm" type="button" onClick={askToFix}>Ask Specflow to fix this</button></div>
+              <div className="build-actions"><button className="btn btn-primary btn-sm" type="button" onClick={askToFix}>Ask {site.name} to fix this</button></div>
             </div>
           </div>
         ) : (
@@ -241,7 +242,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
               <b>{done.status === 'stopped' ? 'Stopped' : 'Stopped at the first failure'}.</b>
               {problems.length ? <ul className="issue-list">{problems.map((i) => <li key={i.step + i.text}>{said(i)}</li>)}</ul> : null}
               <div>Steps before it were written and checked. Fix the problem, then build again: finished steps are skipped.</div>
-              {done.status === 'failed' && problems.length ? <div className="build-actions"><button className="btn btn-secondary btn-sm" type="button" onClick={askToFix}>Ask Specflow to fix this</button></div> : null}
+              {done.status === 'failed' && problems.length ? <div className="build-actions"><button className="btn btn-secondary btn-sm" type="button" onClick={askToFix}>Ask {site.name} to fix this</button></div> : null}
             </div>
           </div>
         )

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/ActionForm';
 import { ConnectForm } from '@/components/ConnectForm';
+import { site } from '@/lib/site';
 import { getContext } from '@/lib/workspace';
 import { removeInstance, updateConnection } from '../../../actions';
 
@@ -32,7 +33,7 @@ export default async function InstanceSettings({ params }: { params: Promise<{ i
         <div className="card-head">
           <div>
             <h2>Connection</h2>
-            <p>Changed the secret in Halo? Paste the new one here. Specflow tests the login before saving anything.</p>
+            <p>Changed the secret in Halo? Paste the new one here. {site.name} tests the login before saving anything.</p>
           </div>
         </div>
         <div className="card-body">
@@ -43,9 +44,9 @@ export default async function InstanceSettings({ params }: { params: Promise<{ i
       <section className="card danger-zone">
         <div className="card-head">
           <div>
-            <h2>Remove from Specflow</h2>
+            <h2>Remove from {site.name}</h2>
             <p>
-              Disconnects this instance and deletes its {convos ?? 0} conversation{convos === 1 ? '' : 's'}, plans and build history from Specflow. Nothing in Halo is changed or deleted.
+              Disconnects this instance and deletes its {convos ?? 0} conversation{convos === 1 ? '' : 's'}, plans and build history from {site.name}. Nothing in Halo is changed or deleted.
             </p>
           </div>
         </div>

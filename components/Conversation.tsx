@@ -60,7 +60,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
     end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [turns.length, pending?.message]);
 
-  // "Ask Specflow to fix this" on a blocked build puts the problems in the box, ready to send.
+  // "Ask … to fix this" on a blocked build puts the problems in the box, ready to send.
   useEffect(() => {
     const fill = (e: Event) => {
       setDraft((e as CustomEvent<string>).detail);

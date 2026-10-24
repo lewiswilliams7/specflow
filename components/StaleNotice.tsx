@@ -1,5 +1,6 @@
 import { ActionForm } from '@/components/ActionForm';
 import { scanInstance } from '@/app/app/actions';
+import { site } from '@/lib/site';
 import { getContext } from '@/lib/workspace';
 
 /**
@@ -21,7 +22,7 @@ export async function StaleNotice({ instanceId, inventoryAt }: { instanceId: str
   if (!last || new Date(last.started_at) <= new Date(inventoryAt)) return null;
   return (
     <div className="banner-warn" role="status">
-      <span>Halo has changed since Specflow last read it (a build ran after the last read). Read it again so new plans reuse what was built instead of creating it twice.</span>
+      <span>Halo has changed since {site.name} last read it (a build ran after the last read). Read it again so new plans reuse what was built instead of creating it twice.</span>
       <ActionForm action={scanInstance} submit="Read again" pending="Reading Halo" variant="secondary" size="sm" className="inline-action">
         <input type="hidden" name="instance_id" value={instanceId} />
       </ActionForm>

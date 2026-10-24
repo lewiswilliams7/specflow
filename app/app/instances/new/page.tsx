@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ConnectForm } from '@/components/ConnectForm';
+import { site } from '@/lib/site';
 import { getContext } from '@/lib/workspace';
 import { connectInstance } from '../../actions';
 
@@ -15,7 +16,7 @@ export default async function NewInstancePage() {
     <div className="page" style={{ maxWidth: 760 }}>
       <div>
         <nav className="crumbs"><Link href="/app/instances">Halo instances</Link></nav>
-        <div className="page-head"><div><h1>Connect a Halo instance</h1><p>Specflow signs in to Halo&apos;s API to read your configuration and, on paid plans, to build.</p></div></div>
+        <div className="page-head"><div><h1>Connect a Halo instance</h1><p>{site.name} signs in to Halo&apos;s API to read your configuration and, on paid plans, to build.</p></div></div>
       </div>
       <section className="card">
         <div className="card-head">

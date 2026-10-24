@@ -1,7 +1,7 @@
 # Instructions for AI coding tools
 
-Marketing site for Specflow (HaloITSM configuration from plain English). The product itself is built in the
-`halo-config-spike` repo for now.
+Enact (formerly Specflow): HaloITSM configuration from plain English. Marketing site and app; the builder is shared
+with the `halo-config-spike` repo. The repo keeps the name `specflow`.
 
 - Copy: British English, no em dashes, "we" not "I", plain words, no claims we haven't proven. Numbers on the page
   (objects built, rule count) must match the spike repo's evidence.

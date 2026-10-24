@@ -1,5 +1,6 @@
 /** A ready plan as JSON, for the builder (halo-config-spike: npm run build:onboarding -- --plan downloads). Read-only. */
 import { supabaseServer } from '@/lib/supabase/server';
+import { site } from '@/lib/site';
 import { getContext } from '@/lib/workspace';
 
 export const dynamic = 'force-dynamic';
@@ -20,7 +21,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   return new Response(JSON.stringify(row.plan, null, 2), {
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'content-disposition': `attachment; filename="specflow-plan-${id.slice(0, 8)}.json"`,
+      'content-disposition': `attachment; filename="${site.wordmark}-plan-${id.slice(0, 8)}.json"`,
       'cache-control': 'no-store',
     },
   });

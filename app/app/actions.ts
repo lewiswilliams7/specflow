@@ -144,7 +144,7 @@ export async function updateConnection(_: FormState, form: FormData): Promise<Fo
   return { ok: moved ? 'Connected to the new address. Read its configuration before planning.' : 'Saved. Halo accepted the login.' };
 }
 
-/** Remove an instance from Specflow (never from Halo). Its conversations and build history go with it. */
+/** Remove an instance from the app (never from Halo). Its conversations and build history go with it. */
 export async function removeInstance(_: FormState, form: FormData): Promise<FormState> {
   const id = String(form.get('instance_id') ?? '');
   const typed = String(form.get('confirm') ?? '').trim();

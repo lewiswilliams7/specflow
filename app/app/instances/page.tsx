@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { IconPlus, IconServer, IconSettings } from '@/components/icons';
+import { site } from '@/lib/site';
 import { getContext } from '@/lib/workspace';
 
 export const preferredRegion = 'lhr1';
@@ -33,7 +34,7 @@ export default async function InstancesPage({ searchParams }: { searchParams: Pr
           </Link>
         )}
       </div>
-      {removed ? <p className="notice ok">Removed from Specflow. Nothing in Halo was changed.</p> : null}
+      {removed ? <p className="notice ok">Removed from {site.name}. Nothing in Halo was changed.</p> : null}
 
       <section className="card">
         {instances?.length ? (

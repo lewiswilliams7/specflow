@@ -1,15 +1,10 @@
 import Link from 'next/link';
 import { site } from '@/lib/site';
 
-/** The mark: three lines of a spec, the last one checked off. */
+/** The Enact mark (public/enact-mark.png, made from the logo with the background cleared). */
 export function Mark({ size = 24 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
-      <rect width="28" height="28" rx="7" fill="var(--brand)" />
-      <path d="M8 9.5h12M8 14h8M8 18.5h12" stroke="var(--on-brand)" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="20" cy="14" r="2" fill="var(--on-brand)" />
-    </svg>
-  );
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/enact-mark.png" width={size} height={size} alt="" aria-hidden="true" style={{ display: 'block', flex: 'none' }} />;
 }
 
 export function Brand({ href = '/' }: { href?: string }) {
