@@ -35,7 +35,7 @@ export default function Home() {
               <span>Built and checked in one run on a real Halo instance during testing: a full joiners, movers and leavers setup.</span>
             </div>
             <div>
-              <strong>73 rules</strong>
+              <strong>74 rules</strong>
               <span>Halo quirks we&apos;ve found and fixed, so they never reach your instance. The list grows with every build.</span>
             </div>
             <div>
@@ -111,7 +111,7 @@ export default function Home() {
                   <li>Custom fields <span>text, memo, date, dropdown, multi-select, checkbox</span></li>
                   <li>Forms and sections, with required fields</li>
                   <li>Ticket types, with team, SLA, approval and workflow</li>
-                  <li>Approval processes <span>groups, named approvers, line managers, ad-hoc, several stages</span></li>
+                  <li>Approval processes <span>groups, named approvers, line managers, ad-hoc, several stages, approvals that depend on an answer</span></li>
                   <li>SLAs, with targets per priority</li>
                   <li>Workflow stages, actions and statuses that pause the SLA</li>
                   <li>Teams and approval groups, with members</li>
@@ -121,7 +121,7 @@ export default function Home() {
                 <h3><span className="badge cant">Not yet</span>Listed for your consultant</h3>
                 <ul>
                   <li>Fields that only show for certain answers</li>
-                  <li>Approvals or routing that depend on a field&apos;s value</li>
+                  <li>Routing that depends on a field&apos;s value</li>
                   <li>Email notifications and templates</li>
                   <li>Child tickets and ticket templates</li>
                   <li>Categories, roles and permissions</li>

@@ -60,7 +60,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
         out.push(`New section "${step.label ?? step.name}" with ${list((step.fields ?? []).map((f) => `${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`)) || 'no fields'}`);
         break;
       case 'approval_process':
-        out.push(`Approval in ${step.approvers?.length ?? 0} stage${step.approvers?.length === 1 ? '' : 's'}: ${list((step.approvers ?? []).map((a) => ('group' in a ? `${ref(a.group)}${a.min ? ` (${a.min} needed)` : ''}` : 'agent' in a ? ref(a.agent) : 'line_manager' in a ? 'line manager' : 'chosen by the agent')))}`);
+        out.push(`Approval in ${step.approvers?.length ?? 0} stage${step.approvers?.length === 1 ? '' : 's'}: ${list((step.approvers ?? []).map((a) => ('group' in a ? `${ref(a.group)}${a.min ? ` (${a.min} needed)` : ''}` : 'agent' in a ? ref(a.agent) : 'line_manager' in a ? 'line manager' : 'rules' in a ? `${a.rules.map((r) => `${ref(r.group ?? r.agent)} if ${ref(r.field)} is "${r.equals}"`).join(', ')} (otherwise approved automatically)` : 'chosen by the agent')))}`);
         break;
       case 'sla':
         out.push(step.targets ? `Targets: ${Object.entries(step.targets).map(([k, v]) => `${k} ${v}`).join(', ')}` : `Resolve within ${step.resolve_days} days`);
