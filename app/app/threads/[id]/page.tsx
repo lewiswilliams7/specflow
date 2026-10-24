@@ -11,7 +11,7 @@ export const preferredRegion = 'lhr1';
 
 export default async function ThreadPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { supabase, workspace } = await getContext();
+  const { supabase, workspace, limits } = await getContext();
   const { data: thread } = await supabase
     .from('threads')
     .select('id, title, instance_id, instances(name, inventory)')
@@ -34,7 +34,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
     const view: TurnView = {
       id: r.id,
       message: r.message ?? r.request,
-      planner: <PlannerTurn plan={plan} errors={(r.errors as string[]) ?? []} previous={previous} inventory={inventory} latest={i === all.length - 1} />,
+      planner: <PlannerTurn plan={plan} errors={(r.errors as string[]) ?? []} previous={previous} inventory={inventory} latest={i === all.length - 1} planId={r.id} canBuild={limits.builds} />,
     };
     if (plan) previous = plan;
     return view;

@@ -8,7 +8,7 @@ import tier1Test2 from './examples/tier1-test-2.json';
 import workflowTest from './examples/workflow-test.json';
 import type { readInventory } from './inventory';
 import { complete, parseJsonReply } from './llm';
-import { planChecks } from './plan-checks';
+import { mandatoryEverywhere, planChecks } from './plan-checks';
 import { type Plan, type PlanStep, refsOf } from './plan-types';
 
 export type Inventory = Awaited<ReturnType<typeof readInventory>>;
@@ -36,6 +36,10 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   const all = new Set([...Object.values(namesOnly).flatMap((v) => (Array.isArray(v) ? v : Object.keys(v ?? {}))), ...standardFields].map((n) => n.toLowerCase()));
   const slaPriorities = new Set(Object.values(inventory.details?.sla_targets ?? {}).flatMap((t) => String(t).split(', ').map((x) => x.replace(/ \S+$/, '').toLowerCase())));
   const wfActions = inventory.details?.workflow_actions_by_stage ?? {};
+  const alwaysMandatory = mandatoryEverywhere([
+    ...Object.values(inventory.details?.field_groups ?? {}),
+    ...Object.values(inventory.details?.ticket_types ?? {}).flatMap((t) => [((t.fields as string[]) ?? []), ...Object.values((t.groups as Record<string, string[]>) ?? {})]),
+  ] as string[][]);
   /** Existing names per plan object, for the near-copy check. */
   const NAMES_BY_OBJECT: Record<string, string[]> = {
     ticket_type: inventory.ticket_types, field: inventory.custom_fields, field_group: inventory.field_groups,
@@ -99,6 +103,9 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   - A rule on a number (cost over £300, more than 10 users) is captured as its OWN new dropdown field holding only the bands ("Under £300", "£300 or more"), placed on the form. Never add band options to an existing field, and never mix the band into another answer ("Laptop (£300 or more)"). The rule itself (approve only when "£300 or more") goes in unsupported until conditional approvals are supported. (M5)
   - When an approval should only happen under a condition that can't be built yet, do NOT attach the approval process to the ticket type: that sends every ticket for approval. Leave it off, put the conditional approval in unsupported, and explain in reply what the customer can do meanwhile. Only attach an approval that must run on every ticket, and then say so in an assumption starting "Every ticket of this type is approved by". (M6)
   - Questions (M7): at most 4 on the first plan, at most 2 on a follow-up, and only for decisions that change what gets built and that the inventory can't answer. Never ask the user to confirm a name or detail they gave you. Never ask again something already asked in the conversation: use their answer. If they leave a choice to you ("either", "up to you", "don't mind"), choose the option that changes the least on their instance, state your choice in assumptions, and don't ask again. Still plan the rest.
+  - Least change (M9): a field asked for on a NEW form goes directly on that form (ticket_type "fields"), not into a section other ticket types share. Change a shared section only when the user wants the field on every form that uses it.
+  - Mandatory: inventory.details marks mandatory fields with *. Never ask whether to make a field mandatory when it already is. A field inside a section is mandatory on every form that uses that section; to make it mandatory on one form only, place it directly on that form.
+  - Names: if you name something differently from the user's own words, say the name you chose in reply.
   - Write every text for the customer (reply, existing_coverage, unsupported, assumptions, questions) in plain English with field LABELS (inventory.details.custom_fields), never internal names like CFhardware.
   - reply: one or two sentences, as a colleague would say them: what the plan does, and on a follow-up what you changed and why. No lists, no repeating the plan.
   - Be concise in names. Output JSON only.
@@ -189,6 +196,8 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       fieldDetails: inventory.details?.custom_fields as Record<string, string> | undefined,
       userMessages: [...(ctx.history ?? []).filter((h) => h.role === 'user').map((h) => h.text), request],
       askedBefore: ctx.askedBefore,
+      alwaysMandatory,
+      previousSteps: ctx.previous?.steps,
     }));
     return errors;
   }
@@ -206,7 +215,7 @@ Return ONLY this JSON (a patch, not the whole plan):
   "upsert_steps": [complete steps to add, or to replace the current step with the same id],
   "existing_coverage": [only if it changed: the complete new list],
   "unsupported": [the complete current list], "assumptions": [the complete current list], "questions": [the complete current list: usually fewer than before, never repeated] }
-If the message only answers questions, upsert nothing: drop the answered questions and record the answers in assumptions.
+If the message only answers questions and the answers change nothing, upsert nothing: drop the answered questions and record the answers in assumptions. Every change your reply describes MUST be in upsert_steps or remove_steps (rule M8).
 `;
 
 type Patch = {

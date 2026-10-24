@@ -25,9 +25,24 @@ export function StateBadge({ state, questions }: { state: PlanState; questions?:
 }
 
 /** The plan as a change review: + new, ~ changed, = already there, ! can't do yet. */
-export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan' }: { plan: Plan | null; errors: string[]; inventory: Inv; open?: boolean; heading?: string }) {
+export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan', planId, canBuild = false }: { plan: Plan | null; errors: string[]; inventory: Inv; open?: boolean; heading?: string; planId?: string; canBuild?: boolean }) {
   const steps = plan?.steps ?? [];
-  const changes = steps.filter((s) => s.action !== 'reuse');
+  // An update to something created in the same plan (e.g. setting the new ticket type's workflow) is one change, not two.
+  const createdKey = (s: PlanStep) => `${s.object}:${(s.name ?? '').toLowerCase()}`;
+  const createdByName = new Map(steps.filter((s) => s.action === 'create').map((s) => [createdKey(s), s]));
+  const foldInto = (s: PlanStep) => (s.action === 'update' ? createdByName.get(`${s.object}:${(s.match?.name ?? '').toLowerCase()}`) : undefined);
+  const folded = new Map<string, PlanStep[]>();
+  for (const s of steps) {
+    const host = foldInto(s);
+    if (host) folded.set(host.id, [...(folded.get(host.id) ?? []), s]);
+  }
+  const changes = steps.filter((s) => s.action !== 'reuse' && !foldInto(s));
+  const says = (s: PlanStep) => {
+    if (!plan) return '';
+    const extra = (folded.get(s.id) ?? []).map((u) => describe(u, plan, inventory).replace(/\.$/, '')).map((t) => t.charAt(0).toLowerCase() + t.slice(1));
+    const base = describe(s, plan, inventory);
+    return extra.length ? `${base.replace(/\.$/, '')}; ${extra.join('; ')}.` : base;
+  };
   const created = changes.filter((s) => s.action === 'create').length;
   const updated = changes.length - created;
   const c = counts(plan);
@@ -71,7 +86,7 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
                 <span className="sign">{s.action === 'create' ? '+' : '~'}</span>
                 <div className="what">
                   <b>{title(s, inventory)}</b> <span className="kind">{s.action === 'create' ? `new ${KIND[s.object]}` : KIND[s.object]}</span>
-                  <p>{plan ? describe(s, plan, inventory) : ''}</p>
+                  <p>{says(s)}</p>
                 </div>
               </li>
             ))}
@@ -137,8 +152,12 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
 
       <div className="plan-foot">
         <span>Nothing has been written to Halo.</span>
-        {state === 'ready' ? (
-          <button className="btn btn-primary btn-sm" type="button" disabled title="Building from the app opens with the partner pilots">
+        {state === 'ready' && canBuild && planId ? (
+          <a className="btn btn-primary btn-sm" href={`/api/plans/${planId}/download`} download>
+            Download for the builder
+          </a>
+        ) : state === 'ready' ? (
+          <button className="btn btn-primary btn-sm" type="button" disabled title="Building is part of the paid plans">
             Build in Halo
           </button>
         ) : (

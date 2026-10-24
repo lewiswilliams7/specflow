@@ -63,7 +63,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
         out.push(`Copy of "${step.copy_of}"${step.insert_steps?.length ? `, adding stages ${list(step.insert_steps.map((i) => `"${i.name}"`))}` : ''}`);
         break;
       case 'ticket_type':
-        out.push(`New ticket type${step.based_on ? ` copied from "${step.based_on}"` : ''}${step.groups?.length ? `, sections ${list(step.groups.map(ref))}` : ''}${step.team ? `, team ${ref(step.team)}` : ''}${step.sla ? `, SLA ${ref(step.sla)}` : ''}${step.approval ? `, approval ${ref(step.approval)}` : ''}`);
+        out.push(`New ticket type${step.based_on ? ` copied from "${step.based_on}"` : ''}${step.fields?.length ? `, fields ${list(step.fields.map((f) => `${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`))}` : ''}${step.groups?.length ? `, sections ${list(step.groups.map(ref))}` : ''}${step.team ? `, team ${ref(step.team)}` : ''}${step.sla ? `, SLA ${ref(step.sla)}` : ''}${step.approval ? `, approval ${ref(step.approval)}` : ''}`);
         break;
       case 'status':
         out.push(`New status${step.sla_action === 'hold' ? ' that pauses the SLA' : ''}`);
@@ -128,7 +128,8 @@ export type PlanDiff = { added: string[]; removed: string[]; changed: string[] }
 /** What changed between two versions of a plan, in plain words. Steps are matched by what they touch, not by id. */
 export function diffPlans(before: Plan | null, after: Plan | null, inv: Inv): PlanDiff | null {
   if (!before || !after) return null;
-  const key = (s: PlanStep) => `${s.object}:${(s.name ?? s.match?.name ?? '').toLowerCase()}:${s.action === 'reuse' ? 'reuse' : 'change'}`;
+  // Keyed by action too: a plan can create a ticket type and then update it (e.g. to set its workflow).
+  const key = (s: PlanStep) => `${s.object}:${(s.name ?? s.match?.name ?? '').toLowerCase()}:${s.action}`;
   // Compare what the step says in plain words (refs resolved to names), so a swapped team or SLA shows as a change.
   const said = (s: PlanStep, plan: Plan) => `${title(s, inv)}|${describe(s, plan, inv)}`;
   const label = (s: PlanStep) => `${OBJECT[s.object]} ${title(s, inv)}`.replace(/^./, (c) => c.toUpperCase());

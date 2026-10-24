@@ -35,7 +35,7 @@ export default function Home() {
               <span>Built and checked in one run on a real Halo instance during testing: a full joiners, movers and leavers setup.</span>
             </div>
             <div>
-              <strong>65 rules</strong>
+              <strong>67 rules</strong>
               <span>Halo quirks we&apos;ve found and fixed, so they never reach your instance. The list grows with every build.</span>
             </div>
             <div>
