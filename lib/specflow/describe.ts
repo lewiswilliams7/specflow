@@ -95,7 +95,9 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
         break;
       case 'notification': {
         const ev: Record<string, string> = { new_ticket_for_team: 'a new ticket is logged to their team', p1_logged: 'a P1 ticket is logged', updated_by_user: 'the user updates a ticket', reassigned: 'a ticket is re-assigned', mentioned: 'they are mentioned' };
-        out.push(`${step.by === 'email' ? 'Emails' : 'Pop-up for'} ${list((step.agents ?? []).map(ref)) || 'nobody'} when ${ev[step.event ?? ''] ?? step.event}`);
+        const who = [step.team ? `the ${ref(step.team)} team` : '', ...(step.agents ?? []).map(ref)].filter(Boolean);
+        const scope = (step.when ?? []).map((c) => ('ticket_type' in c ? ref(c.ticket_type) : 'field' in c ? `${ref(c.field)} is "${c.equals}"` : '')).filter(Boolean);
+        out.push(`${step.by === 'email' ? 'Emails' : 'Pop-up for'} ${list(who) || 'nobody'} when ${ev[step.event ?? ''] ?? step.event}${scope.length ? `, only for ${list(scope)}` : ''}`);
         break;
       }
       case 'ticket_template':

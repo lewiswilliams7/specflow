@@ -119,6 +119,7 @@ export default function Home() {
                   <li>Ticket rules <span>routing and priority based on the ticket type and answers</span></li>
                   <li>Email templates, and action buttons that email the requester</li>
                   <li>Child tickets raised when a ticket is logged</li>
+                  <li>Categories, and ticket rules that set them</li>
                 </ul>
               </div>
               <div className="card">
@@ -127,7 +128,7 @@ export default function Home() {
                   <li>Approvals that depend on a field&apos;s value</li>
                   <li>Email notifications on events, such as a ticket being logged</li>
                   <li>Child tickets raised in order or after approval</li>
-                  <li>Categories, roles and permissions</li>
+                  <li>Roles and permissions</li>
                   <li>Portal and service catalogue, reports, runbooks</li>
                 </ul>
               </div>
