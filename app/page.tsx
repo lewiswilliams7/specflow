@@ -54,7 +54,7 @@ export default function Home() {
               <p>Most implementations start with the same groundwork. {site.name} does the clicking, so a fixed-price build takes less of your team&apos;s time and every day you save is margin.</p>
               <ul className="ticks">
                 <li><b>Matched to each client.</b> It reads their teams, agents, priorities and existing setup, and reuses what fits.</li>
-                <li><b>In the client&apos;s brand.</b> Sign-off reports carry the client&apos;s logo and colour. Branded email templates follow as soon as we&apos;ve proven Halo keeps the layout.</li>
+                <li><b>In the client&apos;s brand.</b> Email templates and sign-off reports carry the client&apos;s logo, colour and footer. You see each email before it&apos;s built.</li>
                 <li><b>Something to hand over.</b> Every build has a sign-off report: who ran it, every record with its Halo ID, ready to print or save as a PDF.</li>
               </ul>
             </div>
@@ -170,7 +170,8 @@ export default function Home() {
                   <li>Teams and approval groups, with members</li>
                   <li>Fields that only show for certain answers</li>
                   <li>Ticket rules <span>routing and priority based on the ticket type and answers</span></li>
-                  <li>Email templates, and action buttons that email the requester</li>
+                  <li>Email templates in the client&apos;s brand <span>logo, colour, footer and Halo&apos;s own variables</span></li>
+                  <li>Action buttons that email the requester</li>
                   <li>Child tickets raised when a ticket is logged</li>
                   <li>Categories, and ticket rules that set them</li>
                   <li>Agent notifications for a team, scoped to a ticket type</li>
@@ -182,7 +183,6 @@ export default function Home() {
                 <ul>
                   <li>Approvals that depend on a field&apos;s value</li>
                   <li>Emails to the requester on events, such as a status change</li>
-                  <li>Emails in your client&apos;s brand <span>built, being checked on Halo</span></li>
                   <li>Child tickets raised in order or after approval</li>
                   <li>Roles and permissions</li>
                   <li>Portal and service catalogue, reports, runbooks</li>

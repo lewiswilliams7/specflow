@@ -31,7 +31,7 @@ export const plans: Plan[] = [
     annual: '£1,490 a year (2 months free)',
     summary: 'For one Halo admin or consultant, with a test and a live instance.',
     limits: { instances: 2, users: 1, plansPerMonth: null, builds: true },
-    features: ['2 Halo instances: test and live', 'Unlimited plans', 'Builds with preview, checks and audit log', 'A sign-off report for every build, in the client’s brand', 'Changes to existing configuration'],
+    features: ['2 Halo instances: test and live', 'Unlimited plans', 'Builds with preview, checks and audit log', 'Emails and sign-off reports in the client’s brand', 'Changes to existing configuration'],
     cta: 'Start with Solo',
   },
   {
