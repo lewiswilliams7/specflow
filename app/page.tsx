@@ -183,7 +183,7 @@ export default function Home() {
                 <h3><span className="badge cant">Not yet</span>Still done by hand</h3>
                 <ul>
                   <li>Approvals that depend on a field&apos;s value</li>
-                  <li>Emails when the status changes some other way <span>Halo sends them from the action that changes it</span></li>
+                  <li>Emails when a rule or an approval changes the status</li>
                   <li>Child tickets raised in order or after approval</li>
                   <li>Roles and permissions</li>
                   <li>Portal and service catalogue, reports, runbooks</li>
