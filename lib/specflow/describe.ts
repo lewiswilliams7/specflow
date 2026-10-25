@@ -10,7 +10,7 @@ export type Inv = { details?: Details } | null;
 const OBJECT: Record<PlanStep['object'], string> = {
   team: 'team', field: 'field', sla: 'SLA', approval_process: 'approval process', ticket_type: 'ticket type', status: 'status',
   outcome: 'action', workflow: 'workflow', agent: 'agent', approval_group: 'approval group', field_group: 'form section',
-  email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child ticket template',
+  email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child ticket template', category: 'category', notification: 'agent notification',
 };
 
 /** "CFhardware" → "Hardware" (its label on this instance), falling back to the name. */
@@ -84,10 +84,18 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
         out.push(`New email template, subject "${step.subject ?? step.name}"`);
         break;
       case 'ticket_rule': {
-        const when = (step.when ?? []).map((c) => ('ticket_type' in c ? `the ticket type is ${ref(c.ticket_type)}` : `${ref(c.field)} is "${c.equals}"`));
+        const when = (step.when ?? []).map((c) => ('ticket_type' in c ? `the ticket type is ${ref(c.ticket_type)}` : 'impact' in c ? `impact is ${c.impact}` : 'urgency' in c ? `urgency is ${c.urgency}` : `${ref(c.field)} is "${c.equals}"`));
         const t = step.then ?? {};
-        const then = [t.team && `team ${ref(t.team)}`, t.agent && `agent ${ref(t.agent)}`, t.priority !== undefined && `priority level ${t.priority}`].filter(Boolean) as string[];
+        const then = [t.team && `team ${ref(t.team)}`, t.agent && `agent ${ref(t.agent)}`, t.priority !== undefined && `priority level ${t.priority}`, t.category && `category ${ref(t.category)}`].filter(Boolean) as string[];
         out.push(`When ${list(when) || 'any ticket'}, set ${list(then) || 'nothing'}`);
+        break;
+      }
+      case 'category':
+        out.push(`New category ${String(step.name ?? '').split('>').map((x) => x.trim()).join(' › ')}`);
+        break;
+      case 'notification': {
+        const ev: Record<string, string> = { new_ticket_for_team: 'a new ticket is logged to their team', p1_logged: 'a P1 ticket is logged', updated_by_user: 'the user updates a ticket', reassigned: 'a ticket is re-assigned', mentioned: 'they are mentioned' };
+        out.push(`${step.by === 'email' ? 'Emails' : 'Pop-up for'} ${list((step.agents ?? []).map(ref)) || 'nobody'} when ${ev[step.event ?? ''] ?? step.event}`);
         break;
       }
       case 'ticket_template':
@@ -124,6 +132,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   if (st.send_email) out.push(`email the requester "${ref(st.send_email)}" when it's pressed`);
   for (const c of st.show_field_when ?? []) out.push(`show ${ref(c.field)} only when ${ref(c.when)} is "${c.equals}"`);
   if (st.subject) out.push(`set the subject to "${st.subject}"`);
+  if (st.priority !== undefined && step.object === 'ticket_rule') out.push(`set the priority to level ${st.priority}`);
   if (st.body) out.push('change the body');
   let text = out.length ? out.join('; ') : 'Update';
   text = text.charAt(0).toUpperCase() + text.slice(1) + '.';

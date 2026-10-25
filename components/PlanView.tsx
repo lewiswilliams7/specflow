@@ -6,7 +6,7 @@ import type { Plan, PlanStep } from '@/lib/specflow/plan-types';
 const KIND: Record<PlanStep['object'], string> = {
   team: 'team', field: 'field', sla: 'SLA', approval_process: 'approval', ticket_type: 'ticket type', status: 'status',
   outcome: 'action', workflow: 'workflow', agent: 'agent', approval_group: 'approval group', field_group: 'form section',
-  email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child tickets',
+  email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child tickets', category: 'category', notification: 'notification',
 };
 const COVER: Record<string, { cls: string; sign: string; label: string }> = {
   built: { cls: 'keep', sign: '=', label: 'Already there' },
