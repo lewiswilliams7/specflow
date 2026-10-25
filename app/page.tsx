@@ -164,7 +164,7 @@ export default function Home() {
                   <li>Custom fields <span>text, memo, date, dropdown, multi-select, checkbox</span></li>
                   <li>Forms and sections, with required fields</li>
                   <li>Ticket types, with team, SLA, approval and workflow</li>
-                  <li>Approval processes <span>groups, named approvers, line managers, ad-hoc, several stages</span></li>
+                  <li>Approval processes <span>groups, named approvers, line managers, ad-hoc, several stages, and stages that only apply for certain answers</span></li>
                   <li>SLAs, with targets per priority</li>
                   <li>Workflow stages, actions and statuses that pause the SLA</li>
                   <li>Teams and approval groups, with members</li>
@@ -182,7 +182,6 @@ export default function Home() {
               <div className="card">
                 <h3><span className="badge cant">Not yet</span>Still done by hand</h3>
                 <ul>
-                  <li>Approvals that depend on a field&apos;s value</li>
                   <li>Emails when a rule or an approval changes the status</li>
                   <li>Child tickets raised in order or after approval</li>
                   <li>Roles and permissions</li>
