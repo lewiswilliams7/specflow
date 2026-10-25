@@ -10,5 +10,5 @@ export const site = {
   company: 'the team behind Handover',
   location: 'Birmingham, UK',
   /** Proof numbers on the site. Must match the spike repo's evidence (HALO_RULES.md rows, NOTES.md 19 Oct run). */
-  proof: { objectsInOneRun: 47, rules: 98, deletes: 0, exampleRunDate: '19 October 2026' },
+  proof: { objectsInOneRun: 47, rules: 99, deletes: 0, exampleRunDate: '19 October 2026' },
 };
