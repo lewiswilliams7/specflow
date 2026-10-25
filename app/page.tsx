@@ -171,7 +171,7 @@ export default function Home() {
                   <li>Fields that only show for certain answers</li>
                   <li>Ticket rules <span>routing and priority based on the ticket type and answers</span></li>
                   <li>Email templates in the client&apos;s brand <span>logo, colour, footer and Halo&apos;s own variables</span></li>
-                  <li>Action buttons that email the requester</li>
+                  <li>Action buttons that email the requester <span>including when they move the ticket to a new status</span></li>
                   <li>Acknowledgement emails when a ticket is logged</li>
                   <li>Child tickets raised when a ticket is logged</li>
                   <li>Categories, and ticket rules that set them</li>
@@ -183,7 +183,7 @@ export default function Home() {
                 <h3><span className="badge cant">Not yet</span>Still done by hand</h3>
                 <ul>
                   <li>Approvals that depend on a field&apos;s value</li>
-                  <li>Emails to the requester when the status changes</li>
+                  <li>Emails when the status changes some other way <span>Halo sends them from the action that changes it</span></li>
                   <li>Child tickets raised in order or after approval</li>
                   <li>Roles and permissions</li>
                   <li>Portal and service catalogue, reports, runbooks</li>
