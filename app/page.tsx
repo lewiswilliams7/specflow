@@ -115,17 +115,20 @@ export default function Home() {
                   <li>SLAs, with targets per priority</li>
                   <li>Workflow stages, actions and statuses that pause the SLA</li>
                   <li>Teams and approval groups, with members</li>
+                  <li>Fields that only show for certain answers</li>
+                  <li>Ticket rules <span>routing and priority based on the ticket type and answers</span></li>
+                  <li>Email templates, and action buttons that email the requester</li>
+                  <li>Child tickets raised when a ticket is logged</li>
                 </ul>
               </div>
               <div className="card">
                 <h3><span className="badge cant">Not yet</span>Listed for your consultant</h3>
                 <ul>
-                  <li>Fields that only show for certain answers</li>
-                  <li>Approvals or routing that depend on a field&apos;s value</li>
-                  <li>Email notifications and templates</li>
-                  <li>Child tickets and ticket templates</li>
+                  <li>Approvals that depend on a field&apos;s value</li>
+                  <li>Email notifications on events, such as a ticket being logged</li>
+                  <li>Child tickets raised in order or after approval</li>
                   <li>Categories, roles and permissions</li>
-                  <li>Portal and service catalogue, reports</li>
+                  <li>Portal and service catalogue, reports, runbooks</li>
                 </ul>
               </div>
             </div>
