@@ -13,8 +13,10 @@ export const maxDuration = 300;
 
 const SUGGESTIONS = [
   'New starter form: full name, start date, department and laptop type. Start date and department required. Goes to the Service Desk team, done within 5 working days.',
+  'Software requests for 6 or more licences go to 1st Line Support at priority 2, and ask for a business reason only when it’s 6 or more.',
+  'Tell everyone in the Service Desk team when a new Software Licensing Request is logged.',
   'Add a stage called Awaiting Equipment to our new starter workflow that pauses the SLA.',
-  'Change requests need approval from the CAB group before they can be scheduled.',
+  'Add a button to software requests that emails the requester to say the software is installed.',
 ];
 
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });

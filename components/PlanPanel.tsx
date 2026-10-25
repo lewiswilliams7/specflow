@@ -51,7 +51,7 @@ export function PlanPanel() {
                 <li className="add"><span className="sign">+</span><div className="what"><b>Joiner approval</b> <span className="kind">new approval</span><p>People Approvers, then a named approver</p></div></li>
                 <li className="change"><span className="sign">~</span><div className="what"><b>Joiner Workflow</b> <span className="kind">workflow</span><p>Add stages HR Checks, IT Provisioning and Facilities</p></div></li>
                 <li className="keep"><span className="sign">=</span><div className="what"><b>Awaiting Equipment</b> <span className="kind">reused</span><p>Already pauses the SLA</p></div></li>
-                <li className="cant"><span className="sign">!</span><div className="what"><b>Child tickets for each piece of kit</b> <span className="kind">can’t do yet</span></div></li>
+                <li className="cant"><span className="sign">!</span><div className="what"><b>Email the manager when a joiner is approved</b> <span className="kind">can’t do yet</span></div></li>
               </ul>
             </div>
           </div>

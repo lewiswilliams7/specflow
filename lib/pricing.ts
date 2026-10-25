@@ -31,7 +31,7 @@ export const plans: Plan[] = [
     annual: '£1,490 a year (2 months free)',
     summary: 'For one Halo admin or consultant, with a test and a live instance.',
     limits: { instances: 2, users: 1, plansPerMonth: null, builds: true },
-    features: ['2 Halo instances: test and live', 'Unlimited plans', 'Builds with preview, checks and audit log', 'Changes to existing configuration'],
+    features: ['2 Halo instances: test and live', 'Unlimited plans', 'Builds with preview, checks and audit log', 'A sign-off report for every build, in the client’s brand', 'Changes to existing configuration'],
     cta: 'Start with Solo',
   },
   {
@@ -42,7 +42,7 @@ export const plans: Plan[] = [
     annual: '£4,990 a year (2 months free)',
     summary: 'For a team or a small partner running several client instances.',
     limits: { instances: 5, users: 5, plansPerMonth: null, builds: true },
-    features: ['5 Halo instances, swap them as clients change', '5 users in a shared workspace', 'Build packs: your standard build, reused', 'Everything in Solo'],
+    features: ['5 Halo instances, swap them as clients change', 'A brand per client instance', '5 users in a shared workspace', 'Build packs: your standard build, reused', 'Everything in Solo'],
     cta: 'Start with Team',
     highlight: true,
   },
@@ -53,7 +53,7 @@ export const plans: Plan[] = [
     per: 'a month',
     summary: 'For Halo partners running implementations at scale.',
     limits: { instances: null, users: null, plansPerMonth: null, builds: true },
-    features: ['Unlimited instances and users', 'Single sign-on', 'Branded sign-off reports', 'Priority support'],
+    features: ['Unlimited instances and users', 'Single sign-on', 'Priority support', 'Everything in Team'],
     cta: 'Talk to us',
   },
 ];

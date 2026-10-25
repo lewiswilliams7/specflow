@@ -17,10 +17,12 @@ const FILES = [
   ['discover.ts', 'lib/specflow/build/discover.ts'],
   ['build.ts', 'lib/specflow/build/build.ts'],
   ['plan-checks.ts', 'lib/specflow/plan-checks.ts'],
+  ['email-brand.ts', 'lib/specflow/build/email-brand.ts'],
 ];
 const toApp = (src, dest) =>
   src
     .replace(/from '\.\/translators\.js'/g, dest.endsWith('plan-checks.ts') ? "from './build/translators'" : "from './translators'")
+    .replace(/from '\.\/email-brand\.js'/g, dest.endsWith('plan-checks.ts') ? "from './build/email-brand'" : "from './email-brand'")
     .replace(/from '\.\/([\w-]+)\.js'/g, "from './$1'")
     .replace("Keep identical to the app's lib/specflow/plan-checks.ts (only the import line differs).", "Keep identical to the spike's spike/lib/plan-checks.ts (only the import line differs).");
 

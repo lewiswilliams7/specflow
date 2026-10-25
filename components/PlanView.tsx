@@ -1,4 +1,7 @@
 import { BuildPanel, type LastBuild } from '@/components/BuildPanel';
+import { EmailPreview } from '@/components/EmailPreview';
+import { brandingLive } from '@/lib/brand';
+import { brandedEmail, type EmailBrand, textToHtml } from '@/lib/specflow/build/email-brand';
 import { IconChevron } from '@/components/icons';
 import { counts, describe, humanise, type Inv, stageText, title } from '@/lib/specflow/describe';
 import type { Plan, PlanStep } from '@/lib/specflow/plan-types';
@@ -29,7 +32,16 @@ export function StateBadge({ state, questions }: { state: PlanState; questions?:
 /** The plan as a change review: + new, ~ changed, = already there, ! can't do yet. */
 export type BuildTarget = { instanceId: string; instanceName: string; baseUrl: string; lastApply: LastBuild };
 
-export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan', planId, canBuild = false, target }: { plan: Plan | null; errors: string[]; inventory: Inv; open?: boolean; heading?: string; planId?: string; canBuild?: boolean; target?: BuildTarget }) {
+/** The email a template step will write, as Halo will be sent it (branded once branding is live: rule EM1). */
+function emailOf(s: PlanStep, brand: EmailBrand | null | undefined): { subject?: string; html: string } | null {
+  if (s.object !== 'email_template') return null;
+  const body = s.action === 'create' ? s.body : s.set?.body;
+  if (!body) return null;
+  const html = brand && brandingLive() ? brandedEmail(body, brand) : textToHtml(body);
+  return { subject: s.action === 'create' ? s.subject : s.set?.subject, html };
+}
+
+export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan', planId, canBuild = false, target, brand, foot }: { plan: Plan | null; errors: string[]; inventory: Inv; open?: boolean; heading?: string; planId?: string; canBuild?: boolean; target?: BuildTarget; brand?: EmailBrand | null; foot?: React.ReactNode }) {
   const steps = plan?.steps ?? [];
   // An update to something created in the same plan (e.g. setting the new ticket type's workflow) is one change, not two.
   const createdKey = (s: PlanStep) => `${s.object}:${(s.name ?? '').toLowerCase()}`;
@@ -97,6 +109,16 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
                 <div className="what">
                   <b>{title(s, inventory)}</b> <span className="kind">{s.action === 'create' ? `new ${KIND[s.object]}` : KIND[s.object]}</span>
                   <p>{says(s)}</p>
+                  {(() => {
+                    const email = emailOf(s, brand);
+                    return email ? (
+                      <details className="email-peek">
+                        <summary>Preview the email</summary>
+                        <EmailPreview subject={email.subject} html={email.html} title={`Preview of ${title(s, inventory)}`} />
+                        {!brand && target ? <a className="subtle" href={`/app/instances/${target.instanceId}/settings#branding`}>Add this client’s logo and colour</a> : null}
+                      </details>
+                    ) : null;
+                  })()}
                 </div>
               </li>
             ))}
@@ -113,7 +135,7 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
             {plan.unsupported.map((u) => (
               <li key={u} className="cant">
                 <span className="sign">!</span>
-                <div className="what"><p>{humanise(u, inventory)}</p><small>Not built. Listed so you or your consultant can set it up in Halo.</small></div>
+                <div className="what"><p>{humanise(u, inventory)}</p><small>Not built. Listed so you can set it up in Halo.</small></div>
               </li>
             ))}
           </ul>
@@ -160,7 +182,9 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
         </details>
       ) : null}
 
-      {state === 'ready' && canBuild && planId && target ? (
+      {foot ? (
+        <div className="plan-foot">{foot}</div>
+      ) : state === 'ready' && canBuild && planId && target ? (
         <div className="plan-foot plan-foot-build">
           <BuildPanel planId={planId} instanceId={target.instanceId} instanceName={target.instanceName} baseUrl={target.baseUrl} lastApply={target.lastApply} titles={Object.fromEntries(steps.map((x) => [x.id, title(x, inventory)]))} />
         </div>

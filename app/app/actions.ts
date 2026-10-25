@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { decrypt, encrypt } from '@/lib/crypto';
 import { assertPublicHost, HaloAuthError, haloClient, normaliseBaseUrl } from '@/lib/specflow/halo';
 import { readInventory } from '@/lib/specflow/inventory';
+import { brandProblems } from '@/lib/specflow/build/email-brand';
 import { getContext } from '@/lib/workspace';
 
 export type FormState = { error?: string; ok?: string };
@@ -156,4 +157,45 @@ export async function removeInstance(_: FormState, form: FormData): Promise<Form
   if (error) return { error: 'Couldn’t remove it. Try again.' };
   revalidatePath('/app', 'layout');
   redirect('/app/instances?removed=1');
+}
+
+/**
+ * Save a client instance's branding (rule EM1): name, hex colour, footer and a logo, uploaded (PNG or JPG, up to 512 KB,
+ * kept in a public bucket because email clients fetch it) or given as an https address.
+ */
+export async function saveBranding(_: FormState, form: FormData): Promise<FormState> {
+  const { supabase, workspace } = await getContext();
+  const instanceId = String(form.get('instance_id') ?? '');
+  const { data: inst } = await supabase.from('instances').select('id').eq('id', instanceId).eq('workspace_id', workspace.id).single();
+  if (!inst) return { error: 'That instance isn’t in your workspace.' };
+  const name = String(form.get('brand_name') ?? '').trim().slice(0, 80) || null;
+  const colour = String(form.get('brand_colour') ?? '').trim() || null;
+  const footer = String(form.get('brand_footer') ?? '').trim().slice(0, 300) || null;
+  let logo: string | null = String(form.get('brand_logo_url') ?? '').trim() || null;
+  if (form.get('remove_logo') === 'on') logo = null;
+
+  const file = form.get('logo');
+  if (file instanceof File && file.size > 0) {
+    if (!['image/png', 'image/jpeg'].includes(file.type)) return { error: 'The logo must be a PNG or JPG. Most email clients don’t show SVG.' };
+    if (file.size > 512 * 1024) return { error: 'The logo must be 512 KB or smaller. A 480 × 96 PNG is plenty.' };
+    const path = `${workspace.id}/logo-${Date.now()}.${file.type === 'image/png' ? 'png' : 'jpg'}`;
+    const { error } = await supabase.storage.from('brand-logos').upload(path, file, { contentType: file.type, upsert: false });
+    if (error) return { error: `Couldn’t upload the logo: ${error.message}` };
+    logo = supabase.storage.from('brand-logos').getPublicUrl(path).data.publicUrl;
+  }
+
+  if (colour) {
+    const problems = brandProblems({ colour, logo_url: logo ?? undefined, footer: footer ?? undefined, name: name ?? undefined });
+    if (problems.length) return { error: `${problems[0][0].toUpperCase()}${problems[0].slice(1)}.` };
+  } else if (logo || footer) {
+    return { error: 'Pick a brand colour too. It’s what the emails and reports are built around.' };
+  }
+  const { error } = await supabase
+    .from('instances')
+    .update({ brand_name: name, brand_colour: colour, brand_logo_url: logo, brand_footer: footer })
+    .eq('id', inst.id)
+    .eq('workspace_id', workspace.id);
+  if (error) return { error: 'Couldn’t save the branding. Try again.' };
+  revalidatePath(`/app/instances/${inst.id}/settings`);
+  return { ok: colour ? 'Saved. New emails and sign-off reports use this branding.' : 'Branding cleared. Emails go out plain.' };
 }

@@ -10,7 +10,7 @@ type Entry = { step: string; object: string; name: string; outcome: string; id?:
 type Summary = { created: number; updated: number; would_create: number; would_update: number; reused: number; failed: number; warnings: number; dropdowns_created: number };
 type Issue = { step: string; text: string };
 type Done = { build_id: string; status: 'succeeded' | 'failed' | 'refused' | 'stopped'; summary: Summary | null; problems: Issue[] };
-export type LastBuild = { status: string; summary: Summary | null; started_at: string } | null;
+export type LastBuild = { id?: string; status: string; summary: Summary | null; started_at: string } | null;
 
 type Props = {
   planId: string;
@@ -140,6 +140,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
         {lastApply ? (
           <span className="subtle">
             Last built {when(lastApply.started_at)}: {lastApply.status === 'succeeded' ? `${lastApply.summary?.created ?? 0} created, ${lastApply.summary?.updated ?? 0} changed` : lastApply.status}
+            {lastApply.id ? <> · <a href={`/app/builds/${lastApply.id}`}>Sign-off report</a></> : null}
           </span>
         ) : (
           <span>Nothing has been written to Halo.</span>
@@ -220,7 +221,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
             <div>
               <b>Built in {instanceName}: {s?.created ?? 0} created, {s?.updated ?? 0} changed, all checked after saving.</b>
               {s?.dropdowns_created ? <div>New dropdown options can need a log-out and back in before they show in Halo (rule U1b).</div> : null}
-              <div><a href={baseUrl} target="_blank" rel="noreferrer">Open Halo</a></div>
+              <div className="build-actions"><a className="btn btn-secondary btn-sm" href={`/app/builds/${done.build_id}`}>Sign-off report</a><a className="btn btn-quiet btn-sm" href={baseUrl} target="_blank" rel="noreferrer">Open Halo</a></div>
               <div className="subtle">
                 {refresh === 'running' ? `Updating what ${site.name} knows about ${instanceName}, so the next plan reuses what was just built…` : refresh === 'done' ? `${site.name}’s copy of ${instanceName} is up to date.` : refresh}
               </div>
@@ -241,7 +242,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
             <div>
               <b>{done.status === 'stopped' ? 'Stopped' : 'Stopped at the first failure'}.</b>
               {problems.length ? <ul className="issue-list">{problems.map((i) => <li key={i.step + i.text}>{said(i)}</li>)}</ul> : null}
-              <div>Steps before it were written and checked. Fix the problem, then build again: finished steps are skipped.</div>
+              <div>Steps before it were written and checked. Fix the problem, then build again: finished steps are skipped. The <a href={`/app/builds/${done.build_id}`}>build report</a> lists exactly what was written.</div>
               {done.status === 'failed' && problems.length ? <div className="build-actions"><button className="btn btn-secondary btn-sm" type="button" onClick={askToFix}>Ask {site.name} to fix this</button></div> : null}
             </div>
           </div>

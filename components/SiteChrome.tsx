@@ -22,7 +22,8 @@ export function SiteHeader() {
       <div className="wrap">
         <Brand />
         <nav className="site-nav" aria-label="Main">
-          <Link className="hide-sm" href="/#how">How it works</Link>
+          <Link className="hide-sm" href="/#partners">For partners</Link>
+          <Link className="hide-sm" href="/example">Example</Link>
           <Link className="hide-sm" href="/#safety">Safety</Link>
           <Link href="/pricing">Pricing</Link>
           <Link href="/login">Sign in</Link>
@@ -40,7 +41,7 @@ export function SiteFooter() {
         <div className="row-between">
           <span>© 2026 {site.name}. Made by {site.company} in {site.location}.</span>
           <span>
-            <Link href="/pricing">Pricing</Link> &nbsp; <Link href="/login">Sign in</Link>
+            <Link href="/example">Example plan</Link> &nbsp; <Link href="/pricing">Pricing</Link> &nbsp; <Link href="/login">Sign in</Link>
           </span>
         </div>
         <p>HaloITSM and HaloPSA are products of Halo Service Solutions. {site.name} is independent and not affiliated with or endorsed by Halo.</p>

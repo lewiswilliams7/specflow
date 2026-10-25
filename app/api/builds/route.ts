@@ -5,6 +5,7 @@
  *    checking each object after it's saved and stopping at the first failure.
  * Stopping (the client aborts) stops between steps, never in the middle of a write. Re-running is safe (U4).
  */
+import { brandOf, withBrand } from '@/lib/brand';
 import { decrypt } from '@/lib/crypto';
 import { type BuildResult, buildWithGate, type StepLog } from '@/lib/specflow/build/build';
 import { memoryTemplates, withRuntime } from '@/lib/specflow/build/runtime';
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
   if (plan.questions?.length) return json(409, 'Answer the plan’s questions first.');
   if (row.superseded_at) return json(409, 'This version of the plan was replaced by an edit. Build the latest one.');
 
-  const { data: inst } = await supabase.from('instances').select('id, name, base_url, tenant, client_id, secret_ciphertext').eq('id', row.instance_id).eq('workspace_id', workspace.id).single();
+  const { data: inst } = await supabase.from('instances').select('id, name, base_url, tenant, client_id, secret_ciphertext, brand_name, brand_colour, brand_logo_url, brand_footer').eq('id', row.instance_id).eq('workspace_id', workspace.id).single();
   if (!inst) return json(404, 'That instance isn’t in your workspace.');
   try {
     await assertPublicHost(inst.base_url);
@@ -60,11 +61,14 @@ export async function POST(req: Request) {
     return json(400, (e as Error).message);
   }
 
+  // The client's branding goes on every email template (rule EM1); a brand the planner wrote is dropped.
+  const branded = withBrand(plan, brandOf(inst));
+
   // A build cut off by the time limit leaves its row "running": clear those so the instance isn't locked forever.
   await supabase.from('builds').update({ status: 'failed', finished_at: new Date().toISOString() }).eq('instance_id', inst.id).eq('status', 'running').lt('started_at', new Date(Date.now() - 6 * 60_000).toISOString());
   const { data: build, error: lockError } = await supabase
     .from('builds')
-    .insert({ workspace_id: workspace.id, instance_id: inst.id, plan_id: row.id, thread_id: row.thread_id, mode, started_by: user.id })
+    .insert({ workspace_id: workspace.id, instance_id: inst.id, plan_id: row.id, thread_id: row.thread_id, mode, started_by: user.id, started_by_email: user.email ?? null })
     .select('id')
     .single();
   if (lockError || !build) return json(409, mode === 'apply' ? 'Another build is running on this instance. Wait for it to finish.' : 'Couldn’t start. Try again.');
@@ -88,7 +92,7 @@ export async function POST(req: Request) {
       let failure = '';
       try {
         result = await withRuntime({ halo, templates: memoryTemplates() }, () =>
-          buildWithGate(plan, {
+          buildWithGate(branded, {
             apply: mode === 'apply',
             signal: stop.signal,
             emit: (e) => {

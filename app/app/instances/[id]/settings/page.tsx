@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ActionForm } from '@/components/ActionForm';
+import { BrandForm } from '@/components/BrandForm';
+import { brandingLive } from '@/lib/brand';
 import { ConnectForm } from '@/components/ConnectForm';
 import { site } from '@/lib/site';
 import { getContext } from '@/lib/workspace';
@@ -12,12 +14,12 @@ export const maxDuration = 60;
 export default async function InstanceSettings({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { supabase, workspace } = await getContext();
-  const { data: inst } = await supabase.from('instances').select('id, name, base_url, client_id, tenant, status, last_error').eq('id', id).eq('workspace_id', workspace.id).single();
+  const { data: inst } = await supabase.from('instances').select('id, name, base_url, client_id, tenant, status, last_error, brand_name, brand_colour, brand_logo_url, brand_footer').eq('id', id).eq('workspace_id', workspace.id).single();
   if (!inst) notFound();
   const { count: convos } = await supabase.from('threads').select('id', { count: 'exact', head: true }).eq('instance_id', id);
 
   return (
-    <div className="page" style={{ maxWidth: 760 }}>
+    <div className="page" style={{ maxWidth: 1080 }}>
       <div>
         <nav className="crumbs">
           <Link href="/app/instances">Halo instances</Link>
@@ -39,6 +41,20 @@ export default async function InstanceSettings({ params }: { params: Promise<{ i
         <div className="card-body">
           <ConnectForm action={updateConnection} submit="Test and save" values={{ id: inst.id, name: inst.name, base_url: inst.base_url, client_id: inst.client_id, tenant: inst.tenant ?? '' }} />
         </div>
+      </section>
+
+      <section className="card" id="branding" aria-labelledby="brand-h">
+        <div className="card-head">
+          <div>
+            <h2 id="brand-h">Branding</h2>
+            <p>The client’s logo, colour and footer. Every email template {site.name} builds on {inst.name}, and every sign-off report, uses them.</p>
+          </div>
+        </div>
+        <BrandForm
+          instanceId={inst.id}
+          live={brandingLive()}
+          initial={{ name: inst.brand_name ?? '', colour: inst.brand_colour ?? '', logo: inst.brand_logo_url ?? '', footer: inst.brand_footer ?? '' }}
+        />
       </section>
 
       <section className="card danger-zone">
