@@ -133,6 +133,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   for (const c of st.retarget_actions ?? []) out.push(`make "${ref(c.via)}" on ${c.step} go to ${c.to_step}`);
   if (st.send_email) out.push(`email the requester "${ref(st.send_email)}" when it's pressed`);
   for (const c of st.show_field_when ?? []) out.push(`show ${ref(c.field)} only when ${ref(c.when)} is "${c.equals}"`);
+  if (st.acknowledgement_email) out.push(`email the requester "${ref(st.acknowledgement_email)}" as soon as a ticket is logged (Halo sends it only if the agent account it sends as is verified)`);
   if (st.subject) out.push(`set the subject to "${st.subject}"`);
   if (st.priority !== undefined && step.object === 'ticket_rule') out.push(`set the priority to level ${st.priority}`);
   if (st.body) out.push('change the body');
