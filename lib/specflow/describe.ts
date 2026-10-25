@@ -86,7 +86,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
       case 'ticket_rule': {
         const when = (step.when ?? []).map((c) => ('ticket_type' in c ? `the ticket type is ${ref(c.ticket_type)}` : `${ref(c.field)} is "${c.equals}"`));
         const t = step.then ?? {};
-        const then = [t.team && `team ${ref(t.team)}`, t.agent && `agent ${ref(t.agent)}`, t.priority && `priority ${t.priority}`].filter(Boolean) as string[];
+        const then = [t.team && `team ${ref(t.team)}`, t.agent && `agent ${ref(t.agent)}`, t.priority !== undefined && `priority level ${t.priority}`].filter(Boolean) as string[];
         out.push(`When ${list(when) || 'any ticket'}, set ${list(then) || 'nothing'}`);
         break;
       }
