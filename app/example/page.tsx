@@ -43,8 +43,9 @@ export default function Example() {
           <div className="notice info example-note">
             <div>
               <b>What’s changed since this run.</b> Some items under “Can’t do yet” can now be built: fields that only show for
-              certain answers, ticket rules that route by answer, child tickets and categories. The approval that depends on
-              an answer, and emails on approval, are still to do by hand.
+              certain answers, ticket rules that route by answer, approvals that only apply for certain answers, child
+              tickets, categories and emails to the requester. Child tickets for each piece of kit in order, and emails
+              on approval, are still to do by hand.
             </div>
           </div>
         </div>
