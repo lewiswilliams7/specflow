@@ -788,6 +788,8 @@ export interface Plan {
   assumptions?: string[];
   /** Planner output: things it needs answered before the plan is safe to build. */
   questions?: string[];
+  /** App planner: this turn was a new request, so it started a fresh plan instead of revising the last one (M12). */
+  fresh?: boolean;
 }
 
 export interface Translator {

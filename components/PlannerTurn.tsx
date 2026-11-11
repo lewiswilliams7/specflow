@@ -9,7 +9,8 @@ import type { EmailBrand } from '@/lib/specflow/build/email-brand';
 export function PlannerTurn({ plan, errors, previous, inventory, latest, planId, canBuild, target, brand }: { plan: Plan | null; errors: string[]; previous: Plan | null; inventory: Inv; latest: boolean; planId?: string; canBuild?: boolean; target?: BuildTarget; brand?: EmailBrand | null }) {
   const c = counts(plan);
   const state = planState(plan, errors);
-  const diff = diffPlans(previous, plan, inventory);
+  // M12: a new request starts a fresh plan, so a diff against the last one would only confuse.
+  const diff = plan?.fresh ? null : diffPlans(previous, plan, inventory);
   const fallback = errors.length
     ? 'I couldn’t make a version of this plan that passes the checks. The problems are listed below; reply with more detail and I’ll try again.'
     : `${c.changes ? `This makes ${c.changes} change${c.changes === 1 ? '' : 's'} to your Halo` : 'Nothing needs changing'}${c.reused ? ` and reuses ${c.reused} thing${c.reused === 1 ? '' : 's'} you already have` : ''}.`;
@@ -23,6 +24,7 @@ export function PlannerTurn({ plan, errors, previous, inventory, latest, planId,
         <span>{site.name}</span>
         {latest ? <StateBadge state={state} questions={plan?.questions?.length} /> : null}
       </div>
+      {plan?.fresh ? <p className="subtle">A new request, so this is a fresh plan. The earlier plan above is unchanged and can still be built.</p> : null}
       <p className="reply">{reply}</p>
 
       {diff ? (

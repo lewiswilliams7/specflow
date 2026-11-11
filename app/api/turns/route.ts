@@ -77,6 +77,10 @@ export async function POST(req: Request) {
     earlier = turns.slice(0, at);
     replaced = turns.slice(at).map((t) => t.id);
   }
+  // M12: a turn that started a fresh plan is where this conversation's current request begins. Earlier turns were
+  // about another request: leave them out, or the planner mixes the two.
+  const freshAt = earlier.map((t) => Boolean(t.plan?.fresh)).lastIndexOf(true);
+  if (freshAt > 0) earlier = earlier.slice(freshAt);
   const history = earlier.flatMap((t) => [
     { role: 'user' as const, text: t.message ?? t.request },
     { role: 'planner' as const, text: plannerNote(t.plan, t.errors ?? []) },

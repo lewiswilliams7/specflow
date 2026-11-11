@@ -237,7 +237,10 @@ export type PlanResult = { plan: Plan | null; errors: string[]; model: string };
 
 /** A follow-up returns only what changes, so it comes back in seconds instead of re-writing the whole plan. */
 const REVISE = `
-THIS IS A FOLLOW-UP. Revise the CURRENT PLAN to reflect the LATEST message and change nothing else.
+THIS IS A FOLLOW-UP. First decide what the LATEST message is (rule M12):
+- A NEW REQUEST: a fresh brief for things to build that aren't a change to the CURRENT PLAN (for example, other ticket types, or the same objects described again from scratch as a new specification). Then return ONLY { "new_request": true } and nothing else: a fresh plan is made from the message alone.
+- A CHANGE to the CURRENT PLAN (corrections, answers to questions, "also add", "remove", "instead"). Then revise it as below.
+Revise the CURRENT PLAN to reflect the LATEST message and change nothing else.
 Return ONLY this JSON (a patch, not the whole plan):
 { "reply": string,
   "remove_steps": [ids of current steps to drop],
@@ -249,6 +252,8 @@ If the message only answers questions and the answers change nothing, upsert not
 `;
 
 type Patch = {
+  /** M12: the latest message is a new brief, not a change to the current plan. */
+  new_request?: boolean;
   reply?: string;
   remove_steps?: string[];
   upsert_steps?: PlanStep[];
@@ -315,6 +320,13 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
     opts.onStage?.('checking');
     try {
       const parsed = parseJsonReply<Plan & Patch>(reply.text);
+      if (revising && attempt === 1 && parsed.new_request === true && !Array.isArray(parsed.steps)) {
+        // M12: a new brief in the same conversation. Plan it from the message alone, without the old plan or the turns
+        // before it, so nothing from the earlier request leaks in.
+        const fresh = await generatePlan(inventory, request, { requester: ctx.requester }, opts);
+        if (fresh.plan) fresh.plan.fresh = true;
+        return fresh;
+      }
       plan = revising && !Array.isArray(parsed.steps) ? applyPatch(ctx.previous!, parsed) : parsed;
     } catch {
       errors = ['The planner reply was not valid JSON.'];
