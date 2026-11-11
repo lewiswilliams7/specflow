@@ -25,7 +25,7 @@ export function PlannerTurn({ plan, errors, previous, inventory, latest, planId,
         <span>{site.name}</span>
         {latest ? <StateBadge state={state} questions={(plan?.questions?.length ?? 0) + (plan?.choices?.length ?? 0)} /> : null}
       </div>
-      {plan?.fresh ? <p className="subtle">A new request, so this is a fresh plan. The earlier plan above is unchanged and can still be built.</p> : null}
+      {plan?.fresh ? <p className="subtle">A new request, so this is a fresh plan. The earlier plan above is unchanged.</p> : null}
       <p className="reply">{reply}</p>
 
       {diff ? (

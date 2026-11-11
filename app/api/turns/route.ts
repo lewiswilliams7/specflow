@@ -82,6 +82,17 @@ export async function POST(req: Request) {
   // about another request: leave them out, or the planner mixes the two.
   const freshAt = earlier.map((t) => Boolean(t.plan?.fresh)).lastIndexOf(true);
   if (freshAt > 0) earlier = earlier.slice(freshAt);
+  // M12b: once the latest plan has been built in Halo, the next message is new work, never an edit of what's built.
+  // (The planner's own judgement kept treating a new brief as a change: 11 Nov.)
+  let builtBefore = false;
+  const lastPlanned = [...earlier].reverse().find((t) => t.plan);
+  if (lastPlanned) {
+    const { count } = await supabase.from('builds').select('id', { count: 'exact', head: true }).eq('plan_id', lastPlanned.id).eq('mode', 'apply').eq('status', 'succeeded');
+    if ((count ?? 0) > 0) {
+      builtBefore = true;
+      earlier = [];
+    }
+  }
   const history = earlier.flatMap((t) => [
     { role: 'user' as const, text: t.message ?? t.request },
     { role: 'planner' as const, text: plannerNote(t.plan, t.errors ?? []) },
@@ -113,6 +124,7 @@ export async function POST(req: Request) {
           { signal: stop.signal, cacheKey: `specflow-${inst.id}`, onStage: (stage: Stage, detail?: string) => send({ type: 'stage', stage, detail }) },
         );
         if (stop.signal.aborted) return;
+        if (builtBefore && result.plan) result.plan.fresh = true;
 
         if (!threadId) {
           const title = message.split('\n')[0].slice(0, 80);
