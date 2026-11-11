@@ -49,8 +49,16 @@ export class HaloAuthError extends Error {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unknown>(path: string, body: unknown) => Promise<T>; token: () => Promise<string> } {
+/** What Halo granted when Enact signed in: everything, or reading only (the application refused "all"). */
+export type HaloAccess = 'all' | 'read:all';
+
+/** Halo signed Enact in for reading only, so nothing can be built. */
+export const READ_ONLY_MESSAGE =
+  'Halo only gave Enact read access, so it can’t build. When Enact signed in, Halo refused the "all" permission and allowed "read:all" instead. In Halo, open Configuration, Integrations, Halo API, this application, Permissions, tick "all", save, then build again.';
+
+export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unknown>(path: string, body: unknown) => Promise<T>; token: () => Promise<string>; access: () => Promise<HaloAccess> } {
   let cached: { token: string; expiresAt: number } | null = null;
+  let granted: HaloAccess = 'all';
 
   async function token(): Promise<string> {
     if (cached && Date.now() < cached.expiresAt - 60_000) return cached.token;
@@ -67,7 +75,11 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
     let res: Response;
     try {
       res = await ask('all');
-      if (res.status === 400) res = await ask('read:all');
+      granted = 'all';
+      if (res.status === 400) {
+        res = await ask('read:all');
+        granted = 'read:all';
+      }
     } catch {
       throw new Error(`Couldn't reach ${new URL(conn.baseUrl).host} to sign in. Check the address, or try again in a minute.`);
     }
@@ -125,11 +137,23 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
       signal: AbortSignal.timeout(90_000),
     });
     const text = await res.text();
+    if (res.status === 401 || res.status === 403) {
+      const why = granted === 'read:all'
+        ? READ_ONLY_MESSAGE
+        : `Halo signed Enact in with the "all" permission but refused this change. The agent the API application logs in as may not be allowed to change configuration: check that agent is an administrator in Halo.`;
+      throw new Error(`POST ${url.pathname} failed (${res.status}). ${why}${text ? `\nHalo said: ${text.slice(0, 500)}` : ''}`);
+    }
     if (!res.ok) throw new Error(`POST ${url.pathname} failed (${res.status})\n${text.slice(0, 2000)}`);
     return (text ? JSON.parse(text) : null) as T;
   }
 
-  return { get, post, token };
+  /** Signs in if needed, then says what Halo granted. */
+  async function access(): Promise<HaloAccess> {
+    await token();
+    return granted;
+  }
+
+  return { get, post, token, access };
 }
 
 /** Halo list endpoints return either an array or an object wrapping one. Find the array. */

@@ -9,7 +9,7 @@ import { brandOf, withBrand } from '@/lib/brand';
 import { decrypt } from '@/lib/crypto';
 import { type BuildResult, buildWithGate, type StepLog } from '@/lib/specflow/build/build';
 import { memoryTemplates, withRuntime } from '@/lib/specflow/build/runtime';
-import { assertPublicHost, haloClient } from '@/lib/specflow/halo';
+import { READ_ONLY_MESSAGE, assertPublicHost, haloClient } from '@/lib/specflow/halo';
 import type { Plan } from '@/lib/specflow/plan-types';
 import { supabaseServer } from '@/lib/supabase/server';
 import { getContext } from '@/lib/workspace';
@@ -91,6 +91,8 @@ export async function POST(req: Request) {
       let result: BuildResult | null = null;
       let failure = '';
       try {
+        // A read-only sign-in would pass the dry run and then fail on the first write: stop before writing anything.
+        if (mode === 'apply' && (await halo.access()) === 'read:all') throw new Error(READ_ONLY_MESSAGE);
         result = await withRuntime({ halo, templates: memoryTemplates() }, () =>
           buildWithGate(branded, {
             apply: mode === 'apply',
