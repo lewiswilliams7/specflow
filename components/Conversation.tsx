@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconArrowUp, IconCheck, IconCopy, IconPencil, IconStop } from '@/components/icons';
+import { Choices } from '@/components/Choices';
 import { Mark } from '@/components/SiteChrome';
 
 export type TurnView = { id: string; message: string; planner: ReactNode };
@@ -18,6 +19,8 @@ type Props = {
   blocked?: string;
   /** Shown under the start view (e.g. earlier conversations). */
   after?: ReactNode;
+  /** The latest plan's choices (rule M13), shown just above the message box. */
+  choices?: { question: string; options: string[] }[];
 };
 
 type Pending = { message: string; editOf?: string; stage: string; detail?: string; startedAt: number; awaiting?: string };
@@ -34,7 +37,7 @@ const STAGE: Record<string, (d?: string) => string> = {
 const fmt = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
 
 /** Chat with the planner. Enter sends, Shift+Enter adds a line, Stop cancels, Edit replans from that message. */
-export function Conversation({ instanceId, threadId, turns, placeholder, start, blocked, after }: Props) {
+export function Conversation({ instanceId, threadId, turns, placeholder, start, blocked, after, choices }: Props) {
   const router = useRouter();
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
@@ -170,6 +173,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
 
   const composer = (
     <div className="composer-dock">
+      {choices?.length && !pending ? <Choices key={turns.at(-1)?.id} choices={choices} /> : null}
       <form
         className="composer"
         onSubmit={(e) => {

@@ -328,7 +328,7 @@ export const FEATURES: Feature[] = [
     key: 'dynamic_lists',
     name: 'dropdowns filled from Halo data (user and site pickers)',
     sections: ['dynamicList'],
-    prompt: `- A dropdown whose options are a live list from Halo (rule F12): field create with type "dropdown", NO options, and dynamic: { list: "users" | "sites", copy_settings_from: ref of a REUSE step of an existing field that inventory.details.custom_fields marks "[dynamic list]" }. users = every active user (a user picker: line manager, the person leaving, who it's for); sites = every site (site / building). Never write SQL. If no field on the instance is marked "[dynamic list]", don't build it: say in unsupported that one dynamic list field has to be made by hand in Halo first. For "sites", say in assumptions to open the new field in Halo and press Test once, since that list hasn't been run on a live instance yet.
+    prompt: `- A dropdown whose options are a live list from Halo (rule F12): field create with type "dropdown", NO options, and dynamic: { list: "users" | "sites", copy_settings_from: ref of a REUSE step of an existing field that inventory.details.custom_fields marks "[dynamic list]" }. users = every active user (a user picker: line manager, the person leaving, who it's for); sites = every site (site / building); organisations = every organisation (customer / client). Never write SQL. To switch an EXISTING field that is already "[dynamic list]" to another of these lists, update it: field update set: { dynamic_list: "users" | "sites" | "organisations" } (no new field, no swap needed). If no field on the instance is marked "[dynamic list]", don't build it: say in unsupported that one dynamic list field has to be made by hand in Halo first. For "sites" and "organisations", say in assumptions to open the field in Halo and press Test once, since those lists haven't been run on a live instance yet.
 - Swap one field for another on forms (e.g. a fixed dropdown for a dynamic one): ticket_type update (or field_group update) set: { replace_fields: [{ old: ref, new: ref }] }. The new field takes the old one's place, mandatory setting and show rules. Add an update step for EVERY ticket type and field group the old field is on (inventory.details). Enact never deletes: name the old field in assumptions so the user can delete it in Halo. Give the new field the same label and hint as the old one unless asked otherwise.`,
   },
   {
@@ -361,6 +361,11 @@ export const SQL_LISTS = {
   sites: {
     what: 'every site',
     sql: 'SELECT s.ssitenum AS ID, s.sdesc AS Display FROM site s ORDER BY s.sdesc',
+    ranOnLiveInstance: false,
+  },
+  organisations: {
+    what: 'every organisation (customer / client)',
+    sql: 'SELECT a.aarea AS ID, a.aareadesc AS Display FROM area a ORDER BY a.aareadesc',
     ranOnLiveInstance: false,
   },
 } as const;
@@ -396,7 +401,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.set?.show_field_when?.length) keys.add('visibility');
   if (step.brand) keys.add('email_branding');
   if (step.hint !== undefined || step.set?.hint !== undefined) keys.add('field_hints');
-  if (step.dynamic || step.set?.replace_fields?.length) keys.add('dynamic_lists');
+  if (step.dynamic || step.set?.replace_fields?.length || step.set?.dynamic_list) keys.add('dynamic_lists');
   if (step.set?.acknowledgement_email) keys.add('acknowledgement');
   return FEATURES.filter((f) => keys.has(f.key));
 }
@@ -807,6 +812,8 @@ export interface PlanStep {
     label?: string;
     /** field: help text (rule F11). */
     hint?: string;
+    /** field: switch an existing dynamic list field to another of Enact's SQL lists (rule F12). */
+    dynamic_list?: SqlList;
     /** ticket_type / field_group: swap a field on the form for another, in the same place (rule F12). */
     replace_fields?: { old: string; new: string }[];
     // approval_group / team
@@ -1104,6 +1111,14 @@ export const translators: Record<PlanStep['object'], Translator> = {
         if (SPIKE_MAP.fieldHint.key) out[SPIKE_MAP.fieldHint.key] = st.hint;
         else gap('field help text (hint)', warn);
       }
+      if (st.dynamic_list) {
+        // F12: same field, same settings, another of Enact's lists. Only a field that already takes its options from SQL.
+        const key = sqlKeyOf(current);
+        const preset = SQL_LISTS[st.dynamic_list];
+        if (!preset) warn(`dynamic_list: Enact has no "${st.dynamic_list}" list (it has ${Object.keys(SQL_LISTS).join(', ')})`);
+        else if (!key) warn(`dynamic_list: "${current.label ?? step.match?.name}" doesn't take its options from SQL, so its list can't be switched (create a dynamic field and replace it instead)`);
+        else if (current[key] !== preset.sql) out[key] = preset.sql;
+      }
       if (st.add_options?.length && m.options) {
         // Existing values keep their ids; new ones go on the end as { name } (same shape as on create).
         const values = ((current[m.options] as Row[]) ?? []).map((v) => ({ ...v }));
@@ -1122,6 +1137,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (m.label && changes[m.label] !== undefined && back[m.label] !== changes[m.label]) out.push(`label is ${JSON.stringify(back[m.label])}`);
       const hk = SPIKE_MAP.fieldHint.key;
       if (hk && changes[hk] !== undefined && back[hk] !== changes[hk]) out.push(`hint is ${JSON.stringify(back[hk])}`);
+      const sk = sqlKeyOf(changes);
+      if (sk && back[sk] !== changes[sk]) out.push(`the SQL list didn't save (rule F12)`);
       if (m.options && changes[m.options]) {
         const have = ((back[m.options] as Row[]) ?? []).map((v) => String(v.name).toLowerCase());
         for (const v of changes[m.options] as Row[]) if (!have.includes(String(v.name).toLowerCase())) out.push(`option "${v.name}" missing after saving`);

@@ -512,8 +512,16 @@ textarea { resize: vertical; min-height: 96px; }
 .brief blockquote { margin: 0; white-space: pre-wrap; color: var(--ink); font-size: 14.5px; line-height: 1.6; }
 .example-note { font-size: 14px; }
 
-/* Choices the planner asks before building a part (rule M13). */
-.choices .choice { margin-top: 10px; }
-.choices .choice p { margin: 0 0 6px; }
-.choice-options { display: flex; flex-wrap: wrap; gap: 6px; }
-.choice-num { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 4px; font-size: 11px; background: color-mix(in srgb, currentColor 12%, transparent); margin-right: 2px; }
+/* Choices the planner asks before building a part (rule M13): compact, just above the message box. */
+.choices { display: grid; gap: 6px; margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; }
+.choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.choice-q { color: var(--ink); font-weight: 500; }
+.choice-options { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; cursor: pointer; }
+.chip:hover { background: var(--surface-2); }
+.chip.on { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
+.chip.quiet { border-style: dashed; color: var(--ink-2); }
+.choice-num { font-size: 11px; opacity: 0.7; }
+.step-parts { margin-top: 4px; font-size: 13px; }
+.step-parts summary { cursor: pointer; color: var(--ink-2); }
+.step-parts ul { margin: 4px 0 0; padding-left: 1.2em; display: grid; gap: 2px; }

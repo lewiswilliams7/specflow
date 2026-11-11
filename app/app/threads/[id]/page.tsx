@@ -4,6 +4,7 @@ import type { LastBuild } from '@/components/BuildPanel';
 import { Conversation, type TurnView } from '@/components/Conversation';
 import { IconChevron } from '@/components/icons';
 import { PlannerTurn } from '@/components/PlannerTurn';
+import { humanise } from '@/lib/specflow/describe';
 import { StaleNotice } from '@/components/StaleNotice';
 import type { Inv } from '@/lib/specflow/describe';
 import type { Plan } from '@/lib/specflow/plan-types';
@@ -62,6 +63,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
         threadId={thread.id}
         turns={turns}
         placeholder="Reply to refine the plan: answer its questions, or change anything"
+        choices={((rows ?? []).at(-1)?.plan as Plan | null)?.choices?.map((c) => ({ question: humanise(c.question, inventory), options: c.options }))}
       />
     </div>
   );

@@ -3,7 +3,7 @@ import { EmailPreview } from '@/components/EmailPreview';
 import { brandingLive } from '@/lib/brand';
 import { brandedEmail, type EmailBrand, textToHtml } from '@/lib/specflow/build/email-brand';
 import { IconChevron } from '@/components/icons';
-import { counts, describe, humanise, type Inv, stageText, title } from '@/lib/specflow/describe';
+import { counts, describeParts, describe, humanise, type Inv, stageText, title } from '@/lib/specflow/describe';
 import type { Plan, PlanStep } from '@/lib/specflow/plan-types';
 
 const KIND: Record<PlanStep['object'], string> = {
@@ -109,6 +109,16 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
                 <div className="what">
                   <b>{title(s, inventory)}</b> <span className="kind">{s.action === 'create' ? `new ${KIND[s.object]}` : KIND[s.object]}</span>
                   <p>{says(s)}</p>
+                  {(() => {
+                    // Every change in full, one per line, for steps that do several things.
+                    const parts = plan ? [s, ...(folded.get(s.id) ?? [])].flatMap((x) => describeParts(x, plan, inventory)) : [];
+                    return parts.length > 1 ? (
+                      <details className="step-parts">
+                        <summary>{parts.length} changes in detail</summary>
+                        <ul>{parts.map((p, i) => <li key={i}>{p.charAt(0).toUpperCase() + p.slice(1)}</li>)}</ul>
+                      </details>
+                    ) : null;
+                  })()}
                   {(() => {
                     const email = emailOf(s, brand);
                     return email ? (

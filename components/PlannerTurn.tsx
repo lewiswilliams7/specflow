@@ -1,4 +1,3 @@
-import { Choices } from '@/components/Choices';
 import { Mark } from '@/components/SiteChrome';
 import { type BuildTarget, PlanView, planState, StateBadge } from '@/components/PlanView';
 import { counts, diffPlans, humanise, type Inv } from '@/lib/specflow/describe';
@@ -37,7 +36,11 @@ export function PlannerTurn({ plan, errors, previous, inventory, latest, planId,
         </div>
       ) : null}
 
-      {plan?.choices?.length ? <Choices choices={plan.choices.map((c) => ({ question: humanise(c.question, inventory), options: c.options }))} live={latest} /> : null}
+      {plan?.choices?.length && !latest ? (
+        <p className="subtle">Asked you to choose: {plan.choices.map((c) => humanise(c.question, inventory)).join(' · ')}</p>
+      ) : plan?.choices?.length ? (
+        <p className="subtle">{plan.choices.length === 1 ? 'One choice' : `${plan.choices.length} choices`} to make, just above the message box.</p>
+      ) : null}
 
       {plan?.questions?.length ? (
         <div className="questions">

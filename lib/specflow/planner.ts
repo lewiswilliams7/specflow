@@ -103,7 +103,7 @@ ${readyFeaturePrompt()}
   - Ticket types: if an existing type already covers a requested type (e.g. "Change Request" for normal changes), update it; create a new type only for a genuinely separate one.
   - Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
   - SLA targets: use only priority names that appear in inventory.details.sla_targets. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities.
-  - CHOICES (rule M13): when the request leaves a decision with a few clear answers, ask it in choices, not questions: { "question": short plain question naming the field or object, "options": 2 to 4 short answers }. Typical: a dropdown whose options aren't given ("Site / Building: where should the options come from?" options "A live list from Halo's sites", "A fixed list I'll give you", "Something else"); reuse an existing field or make a new one; which of two overlapping fields to keep. Build nothing for that part until it's answered (leave that step out and say so in reply). At most 3 choices; a choice the inventory or the request already answers is not a choice.
+  - CHOICES (rule M13): when the request leaves a decision with a few clear answers, ask it in choices, not questions: { "question": short plain question naming the field or object, "options": 2 to 4 short answers }. Typical: a dropdown whose options aren't given ("Site / Building: where should the options come from?" options "A live list from Halo's sites", "A fixed list I'll give you", "Something else"); reuse an existing field or make a new one; which of two overlapping fields to keep. Build nothing for that part until it's answered (leave that step out and say so in reply). At most 3 choices; a choice the inventory or the request already answers is not a choice. Never ask the same thing again in questions: questions are only for facts you can't offer as options (a list of names, a date). Keep the choice question short (under 12 words).
   - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
   - The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
   - A rule on a number (cost over £300, more than 10 users) is captured as its OWN new dropdown field holding only the bands ("Under £300", "£300 or more"), placed on the form. Never add band options to an existing field, and never mix the band into another answer ("Laptop (£300 or more)"). Then use a rules stage for the approval that depends on it (P7). (M5)
@@ -301,6 +301,17 @@ export function applyPatch(base: Plan, patch: Patch): Plan {
   };
 }
 
+/** M13: a question that asks what a choice already asks is noise; keep the choice (it has buttons). */
+function dropRepeatedQuestions(plan: Plan) {
+  if (!plan.choices?.length || !plan.questions?.length) return;
+  const words = (t: string) => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 3));
+  const asked = plan.choices.map((c) => words(`${c.question} ${c.options.join(' ')}`));
+  plan.questions = plan.questions.filter((q) => {
+    const w = [...words(q)];
+    return !asked.some((a) => w.length && w.filter((x) => a.has(x)).length / w.length >= 0.5);
+  });
+}
+
 export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
 export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string };
 
@@ -340,6 +351,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
     errors = validate(plan);
     if (!errors.length) break;
   }
+  if (plan) dropRepeatedQuestions(plan);
   if (plan) plan.request = ctx.history?.length ? `${ctx.history.find((h) => h.role === 'user')?.text ?? ''}\n\n(Latest: ${request})` : request;
   return { plan, errors, model };
 }

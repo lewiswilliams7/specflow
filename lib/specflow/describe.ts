@@ -1,4 +1,5 @@
 /** Plain-English descriptions of plan steps, using the instance's own labels instead of internal names. */
+import { SQL_LISTS } from './build/translators';
 import type { Plan, PlanStep } from './plan-types';
 
 type Details = {
@@ -40,7 +41,15 @@ export function stageText(ins: { name: string; after_step: string; enter_via: st
   return `"${ins.name}" after ${ins.after_step} (in: ${ref(ins.enter_via)}; out: ${outs || 'none'})`;
 }
 
+/** One sentence for a step. */
 export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
+  const parts = describeParts(step, plan, inv);
+  const text = parts.join('; ');
+  return text.charAt(0).toUpperCase() + text.slice(1) + '.';
+}
+
+/** Every change a step makes, one per line, so the plan can show them in full. */
+export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
   const ref = (id?: string) => {
     const s = plan.steps.find((x) => x.id === id);
     if (!s) return id ?? '';
@@ -51,13 +60,15 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   const list = (xs: string[]) => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
   const out: string[] = [];
 
-  if (step.action === 'reuse') return `Uses the existing ${OBJECT[step.object]}.`;
+  if (step.action === 'reuse') return [`uses the existing ${OBJECT[step.object]}`];
 
   if (step.action === 'create') {
     switch (step.object) {
       case 'field':
         out.push(`New ${step.type ?? ''} field "${step.label ?? step.name}"`.replace('  ', ' '));
         if (step.options?.length) out.push(`options: ${list(step.options)}`);
+        if (step.dynamic) out.push(`options are a live list from Halo: ${SQL_LISTS[step.dynamic.list]?.what ?? step.dynamic.list} (settings copied from ${ref(step.dynamic.copy_settings_from)})`);
+        if (step.hint) out.push(`hint "${step.hint}"`);
         break;
       case 'field_group':
         out.push(`New section "${step.label ?? step.name}" with ${list((step.fields ?? []).map((f) => `${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`)) || 'no fields'}`);
@@ -110,7 +121,7 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
       default:
         out.push(`New ${OBJECT[step.object]}`);
     }
-    return out.join('; ') + '.';
+    return out;
   }
 
   // update
@@ -137,13 +148,16 @@ export function describe(step: PlanStep, plan: Plan, inv: Inv): string {
   if (st.subject) out.push(`set the subject to "${st.subject}"`);
   if (st.priority !== undefined && step.object === 'ticket_rule') out.push(`set the priority to level ${st.priority}`);
   if (st.body) out.push('change the body');
-  let text = out.length ? out.join('; ') : 'Update';
-  text = text.charAt(0).toUpperCase() + text.slice(1) + '.';
+  if (st.hint !== undefined) out.push(st.hint ? `set the hint to "${st.hint}"` : 'clear the hint');
+  if (st.dynamic_list) out.push(`make its options a live list from Halo: ${SQL_LISTS[st.dynamic_list]?.what ?? st.dynamic_list}`);
+  for (const r of st.replace_fields ?? []) out.push(`replace ${ref(r.old)} with ${ref(r.new)}, in the same place with the same required setting`);
+  // Never a bare "Update": name whatever else it sets.
+  if (!out.length) out.push(`change ${Object.keys(st).join(', ').replace(/_/g, ' ') || 'nothing'}`);
   if (step.object === 'field_group') {
     const users = sectionUsedBy(inv, step.match?.name);
-    if (users.length > 1) text += ` This section is also on ${list(users)}: they change too.`;
+    if (users.length > 1) out.push(`this section is also on ${list(users)}: they change too`);
   }
-  return text;
+  return out;
 }
 
 export function counts(plan: Plan | null) {
