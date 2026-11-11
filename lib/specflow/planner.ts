@@ -155,7 +155,9 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       if (s.object === 'field' && s.action === 'create' && s.label) {
         const stem = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w.replace(/(ing|ed|s)$/, '')).join(' ');
         const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!));
-        if (hit) errors.push(`${where}: field "${hit[0]}" already exists with the label "${s.label}": reuse it`);
+        // F12: a dynamic field that replaces the old one on forms keeps the old one's label on purpose.
+        const swapsIn = Boolean(s.dynamic) && plan.steps.some((x) => (x.set?.replace_fields ?? []).some((r) => r.new === s.id));
+        if (hit && !swapsIn) errors.push(`${where}: field "${hit[0]}" already exists with the label "${s.label}": reuse it`);
       }
       // A near-copy is the same name plus a copy marker ("Joiner Workflow (People Ops)", "New Starter v2", "CFhardware2"),
       // not a longer name that happens to share a prefix ("CFHardwareCostBand" is a different field from "CFhardware").

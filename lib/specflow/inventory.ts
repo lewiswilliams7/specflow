@@ -111,7 +111,9 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
   for (const d of fieldDetails) {
     const type = FIELD_TYPE_NAMES[Number(d.type)] ?? `type ${d.type}`;
     const options = ((d.values as Row[]) ?? []).map((v) => String(v.name)).filter(Boolean);
-    custom_fields[nameOf(d)] = `"${d.label ?? ''}" ${type}${options.length ? `: ${options.join(' | ')}` : ''}`;
+    // F12: a dropdown filled from SQL can be copied to make user and site pickers; F11: its help text.
+    const dynamic = Object.values(d).some((v) => typeof v === 'string' && /\bselect\b[\s\S]+\bfrom\b/i.test(v));
+    custom_fields[nameOf(d)] = `"${d.label ?? ''}" ${type}${dynamic ? ' [dynamic list]' : ''}${options.length ? `: ${options.join(' | ')}` : ''}${d.hint ? ` (hint: ${String(d.hint).slice(0, 80)})` : ''}`;
   }
 
   say(`${ticketTypes.length} ticket types`);

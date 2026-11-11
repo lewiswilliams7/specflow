@@ -88,6 +88,13 @@ export const SPIKE_MAP = {
   fieldHint: {
     key: 'hint' as string | null,
   },
+  /** Dropdowns whose options come from SQL (rule F12). Halo's settings for these (lookup type, method, load type,
+   *  connection, the SQL) aren't guessed: a new one copies every plain setting from a field on the same instance that
+   *  already takes its options from SQL, and only the SQL is swapped for one of SQL_LISTS. Switched on 11 Nov at the
+   *  owner's request; the SQL key is found by its value and each save is read back. */
+  dynamicList: {
+    copiesFromExistingField: true as boolean | null,
+  },
   /** Halo $variables (rule EM2), case-insensitive. Evidence: learning run 16, every whole-word $variable in the subjects
    *  and HTML of the instance's 94 email templates (97 distinct). Meanings in `common` are from how Halo's own templates
    *  use them ("Hi $firstname,", "Logged $DATEOCCURED", "changed to $status", "Technician Assigned: $assignedto"). */
@@ -318,6 +325,13 @@ export const FEATURES: Feature[] = [
     prompt: `- field create may have hint: the help text Halo shows with the field, on the agent form and the portal. Use the brief's help text word for word. field update set: { hint } changes it on an existing field. Halo keeps ONE hint per field, not per form: if a shared field has different help text on different forms, use the most general one and say which in assumptions. A field that is also on ticket types the brief doesn't mention: say so in assumptions, since its hint changes there too.`,
   },
   {
+    key: 'dynamic_lists',
+    name: 'dropdowns filled from Halo data (user and site pickers)',
+    sections: ['dynamicList'],
+    prompt: `- A dropdown whose options are a live list from Halo (rule F12): field create with type "dropdown", NO options, and dynamic: { list: "users" | "sites", copy_settings_from: ref of a REUSE step of an existing field that inventory.details.custom_fields marks "[dynamic list]" }. users = every active user (a user picker: line manager, the person leaving, who it's for); sites = every site (site / building). Never write SQL. If no field on the instance is marked "[dynamic list]", don't build it: say in unsupported that one dynamic list field has to be made by hand in Halo first. For "sites", say in assumptions to open the new field in Halo and press Test once, since that list hasn't been run on a live instance yet.
+- Swap one field for another on forms (e.g. a fixed dropdown for a dynamic one): ticket_type update (or field_group update) set: { replace_fields: [{ old: ref, new: ref }] }. The new field takes the old one's place, mandatory setting and show rules. Add an update step for EVERY ticket type and field group the old field is on (inventory.details). Enact never deletes: name the old field in assumptions so the user can delete it in Halo. Give the new field the same label and hint as the old one unless asked otherwise.`,
+  },
+  {
     key: 'email_branding',
     name: 'branded email layouts (logo, colour and footer)',
     sections: ['emailBrand'],
@@ -336,6 +350,27 @@ export function featureGaps(f: Feature): string[] {
   return f.sections.flatMap((sec) => Object.entries(SPIKE_MAP[sec] as Record<string, unknown>).filter(([, v]) => v === null).map(([k]) => `${sec}.${k}`));
 }
 export const featureReady = (f: Feature) => featureGaps(f).length === 0;
+
+/** Rule F12: the SQL lists Enact ships. The planner picks one by name; it never writes SQL against a client's database. */
+export const SQL_LISTS = {
+  users: {
+    what: 'every active user, shown as "Name (email)"',
+    sql: "SELECT u.uid AS ID, u.uusername + ISNULL(' (' + NULLIF(u.uemail, '') + ')', '') AS Display FROM users u WHERE u.uinactive = 0 AND u.uusername <> 'General User' ORDER BY u.uusername",
+    ranOnLiveInstance: true, // 11 Nov: Halo's Test returned every user
+  },
+  sites: {
+    what: 'every site',
+    sql: 'SELECT s.ssitenum AS ID, s.sdesc AS Display FROM site s ORDER BY s.sdesc',
+    ranOnLiveInstance: false,
+  },
+} as const;
+export type SqlList = keyof typeof SQL_LISTS;
+
+/** The setting that holds a field's SQL, found by its value (rule F12). */
+export function sqlKeyOf(row: Record<string, unknown> | null | undefined): string | null {
+  for (const [k, v] of Object.entries(row ?? {})) if (typeof v === 'string' && /\bselect\b[\s\S]+\bfrom\b/i.test(v)) return k;
+  return null;
+}
 /** Planner lines for the features that are ready. */
 export const readyFeaturePrompt = () => FEATURES.filter(featureReady).map((f) => f.prompt).filter(Boolean).join('\n');
 /** The Halo variables the planner may use: the evidenced list once learn has read it, else the three seen so far. */
@@ -361,6 +396,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.set?.show_field_when?.length) keys.add('visibility');
   if (step.brand) keys.add('email_branding');
   if (step.hint !== undefined || step.set?.hint !== undefined) keys.add('field_hints');
+  if (step.dynamic || step.set?.replace_fields?.length) keys.add('dynamic_lists');
   if (step.set?.acknowledgement_email) keys.add('acknowledgement');
   return FEATURES.filter((f) => keys.has(f.key));
 }
@@ -377,6 +413,56 @@ function departmentOf(ref: string, refs: Refs, warn: (m: string) => void): Recor
 type Row = Record<string, unknown>;
 
 /** Existing rows of a field list, ready to send back: nested display objects dropped (rule U2). */
+/**
+ * Rule F12: a dropdown filled from SQL. Every plain setting is copied from a field on this instance that already takes
+ * its options from SQL (so Halo's own lookup type, method, load type and connection come with it), then the identity,
+ * label, hint and SQL are this field's own. Lists and objects aren't copied: they tie a field to its forms and values.
+ */
+function dynamicField(step: PlanStep, fallback: Row, refs: Refs, warn: (m: string) => void): Row {
+  const d = step.dynamic!;
+  const src = refs[d.copy_settings_from]?.row;
+  const key = sqlKeyOf(src);
+  const preset = SQL_LISTS[d.list];
+  if (!preset) { warn(`dynamic list: Enact has no "${d.list}" list (it has ${Object.keys(SQL_LISTS).join(', ')})`); return fallback; }
+  if (!src || !key) { warn(`dynamic list: "${d.copy_settings_from}" must be a REUSED field that already takes its options from SQL (rule F12)`); return fallback; }
+  const plain = Object.fromEntries(Object.entries(src).filter(([k, v]) => (v === null || typeof v !== 'object') && !/^(id|guid|name|label|hint|summary|defaultvalue|defaultvalue_lookup)$/i.test(k)));
+  return {
+    ...plain,
+    name: bareFieldName(step.name),
+    label: step.label ?? step.name,
+    hint: step.hint ?? '',
+    summary: FIELD_SUMMARY_PLACEHOLDER, // cleared by afterCreate (rule F6)
+    usage: 1, // rule F10
+    [key]: preset.sql,
+  };
+}
+
+/** Rule F12: put the new field where the old one was on a form, with its mandatory setting and show rules. */
+function replaceRows(rows: Row[], pairs: { old: string; new: string }[], refs: Refs, warn: (m: string) => void) {
+  const vk = SPIKE_MAP.visibility.conditions;
+  for (const p of pairs) {
+    const oldId = Number(refs[p.old]?.id);
+    const newId = Number(refs[p.new]?.id);
+    const at = rows.findIndex((r) => Number(r.fieldid) === oldId);
+    if (at < 0) {
+      if (!rows.some((r) => Number(r.fieldid) === newId)) warn(`replace_fields: "${refs[p.old]?.row?.label ?? p.old}" isn't directly on this form (inside a section? replace it on the field group)`);
+      continue; // already swapped on an earlier run
+    }
+    // A show rule elsewhere on the form that depends on the old field would break.
+    const dependants = rows.filter((r) => (((vk && r[vk]) as Row[]) ?? []).some((g) => ((g.visibility_conditions as Row[]) ?? []).some((c) => Number(c.lookup_field_id) === oldId)));
+    if (dependants.length) { warn(`replace_fields: ${dependants.length} show rule(s) on this form depend on "${refs[p.old]?.row?.label ?? p.old}"; not swapped`); continue; }
+    const { id: _id, guid: _guid, ...rest } = rows[at];
+    if (vk && Array.isArray(rest[vk])) rest[vk] = (rest[vk] as Row[]).map(({ id: _g, ...g }) => ({ ...g, entity_id2: newId }));
+    rows[at] = { ...rest, fieldid: newId };
+  }
+}
+
+/** Problems if a swapped-out field is still on the form after saving (rule F12). */
+function checkReplaced(back: unknown, pairs: { old: string; new: string }[] | undefined, refs: Refs | undefined, what: string): string[] {
+  const got = (back as Row[]) ?? [];
+  return (pairs ?? []).filter((p) => got.some((r) => Number(r.fieldid) === Number(refs?.[p.old]?.id))).map((p) => `${what}: "${refs?.[p.old]?.row?.label ?? p.old}" is still on the form after saving; take it off by hand`);
+}
+
 function keepRows(rows: unknown): Row[] {
   return ((rows as Row[]) ?? []).map((r) => {
     const { group: _g, fieldinfo: _f, ...rest } = r;
@@ -656,6 +742,8 @@ export interface PlanStep {
   brand?: EmailBrand;
   /** field: help text shown with the field (rule F11). */
   hint?: string;
+  /** field create: options from one of Enact's SQL lists, with Halo's settings copied from an existing SQL field (F12). */
+  dynamic?: { list: SqlList; copy_settings_from: string };
   label?: string;
   type?: string;
   options?: string[];
@@ -719,6 +807,8 @@ export interface PlanStep {
     label?: string;
     /** field: help text (rule F11). */
     hint?: string;
+    /** ticket_type / field_group: swap a field on the form for another, in the same place (rule F12). */
+    replace_fields?: { old: string; new: string }[];
     // approval_group / team
     add_members?: string[];
     // outcome: email the requester when the button is pressed
@@ -833,7 +923,7 @@ export interface Translator {
   /** For action 'update': check the read-back. Returns problems; without it, scalar keys are compared. */
   verifyUpdate?: (back: Record<string, unknown>, changes: Record<string, unknown>, step: PlanStep, refs: Refs) => string[];
   /** For action 'create': problems in the read-back beyond the name (e.g. a field that isn't a ticket field, rule F10). */
-  verifyCreate?: (back: Record<string, unknown>) => string[];
+  verifyCreate?: (back: Record<string, unknown>, step: PlanStep) => string[];
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
 }
 
@@ -965,10 +1055,20 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Rule F6 (2026-10-19): a field created via the API only works fully (dropdown options show)
     // after one real save. Create with a placeholder summary, then clear it: a real change, clean result.
     afterCreate: (id) => ({ id, summary: '' }),
-    verifyCreate: (back) => (Number(back.usage) === 1 ? [] : [`Field saved as usage ${back.usage}, not a ticket field (1): values typed on a form won't be stored (rule F10)`]),
+    verifyCreate: (back, step) => {
+      const out = Number(back.usage) === 1 ? [] : [`Field saved as usage ${back.usage}, not a ticket field (1): values typed on a form won't be stored (rule F10)`];
+      if (step?.dynamic) {
+        const key = sqlKeyOf(back);
+        const want = SQL_LISTS[step.dynamic.list]?.sql;
+        if (!key || back[key] !== want) out.push(`dynamic list: the SQL didn't save (rule F12); found ${key ? JSON.stringify(String(back[key]).slice(0, 80)) : 'none'}`);
+      }
+      return out;
+    },
     build: (step, _refs, warn) => {
       // Prefer a template of the same field type: each type carries its own defaults.
       // A text template made dropdowns with inputtype -1 and no load_type, and their options didn't show (2026-10-19).
+      // F12: a dropdown filled from SQL copies an existing SQL field on the instance, not a template.
+      if (step.dynamic) return dynamicField(step, {}, _refs, warn);
       const p = fromTemplate(templateFileFor(step, fieldTemplateFile(step.type)), 'FieldInfo');
       const m = SPIKE_MAP.field;
       p.name = bareFieldName(step.name);
@@ -1210,9 +1310,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (st.approval) out.approval_process_id = refs[st.approval]?.id;
       if (st.team && m.teamName) out[m.teamName] = refs[st.team]?.name; // rule T1: team by NAME
       if (st.sla && m.sla) out[m.sla] = refs[st.sla]?.id;
-      if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length || st.copy_standard_fields_from) {
+      if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length || st.copy_standard_fields_from || st.replace_fields?.length) {
         // Rule U2 (2026-10-23): the form is one list. Send ALL existing rows back (ids kept) plus the new ones.
         const rows = keepRows(current[m.fields as string]);
+        if (st.replace_fields?.length) replaceRows(rows, st.replace_fields, refs, warn);
         const shape: Row = { usage: 0, groupid: 0, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 };
         editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn, formLabels(current), rowNames(current));
         let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
@@ -1274,12 +1375,13 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (!Object.keys(out).length) warn('update: nothing to set');
       return out;
     },
-    verifyUpdate: (back, changes) => {
+    verifyUpdate: (back, changes, step, refs) => {
       const m = SPIKE_MAP.ticketType;
       const out: string[] = [];
       for (const [k, v] of Object.entries(changes)) {
         if (k === m.fields) {
           out.push(...checkFieldRows(back[k], v, 'form'));
+          out.push(...checkReplaced(back[k], step?.set?.replace_fields, refs, 'form'));
           // V1: every condition we sent is on the field's row after saving.
           const vk = SPIKE_MAP.visibility.conditions as string;
           for (const r of v as Row[]) {
@@ -1380,12 +1482,13 @@ export const translators: Record<PlanStep['object'], Translator> = {
     },
     update: (step, refs, warn, current) => {
       const st = step.set ?? {};
-      if (!st.add_fields?.length && !st.field_mandatory?.length) { warn('update: nothing to set'); return {}; }
+      if (!st.add_fields?.length && !st.field_mandatory?.length && !st.replace_fields?.length) { warn('update: nothing to set'); return {}; }
       const rows = keepRows(current.fields);
+      if (st.replace_fields?.length) replaceRows(rows, st.replace_fields, refs, warn);
       editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn, formLabels(current), rowNames(current));
       return { fields: rows };
     },
-    verifyUpdate: (back, changes) => checkFieldRows(back.fields, changes.fields, 'field group'),
+    verifyUpdate: (back, changes, step, refs) => [...checkFieldRows(back.fields, changes.fields, 'field group'), ...checkReplaced(back.fields, step?.set?.replace_fields, refs, 'field group')],
   },
 
   status: {
@@ -1745,6 +1848,8 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.set?.add_groups ?? []),
     ...(step.set?.add_fields ?? []).map((f) => f.ref),
     ...(step.set?.field_mandatory ?? []).map((f) => f.ref),
+    ...(step.set?.replace_fields ?? []).flatMap((r) => [r.old, r.new]),
+    step.dynamic?.copy_settings_from,
     ...(step.set?.add_members ?? []),
     ...(step.set?.insert_steps ?? []).flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
     ...[...(step.set?.add_actions ?? []), ...(step.set?.retarget_actions ?? [])].map((c) => c.via),
