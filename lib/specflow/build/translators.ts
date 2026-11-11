@@ -82,10 +82,11 @@ export const SPIKE_MAP = {
   emailBrand: {
     keptByHalo: true as boolean | null,
   },
-  /** Field help text (rule F11). Every field template carries "hint" and Halo's form calls it "Hint for Field", but
-   *  nothing has been saved and read back yet: learning run 27 does that. null until then. */
+  /** Field help text (rule F11). Evidence: every captured field template carries "hint", and Halo's field form calls
+   *  it "Hint for Field". Switched on by the owner on 11 Nov before a read-back proof; every save is read back
+   *  (verifyUpdate) and warns if Halo didn't keep it. Learning run 27 confirms it. */
   fieldHint: {
-    key: null as string | null,
+    key: 'hint' as string | null,
   },
   /** Halo $variables (rule EM2), case-insensitive. Evidence: learning run 16, every whole-word $variable in the subjects
    *  and HTML of the instance's 94 email templates (97 distinct). Meanings in `common` are from how Halo's own templates
