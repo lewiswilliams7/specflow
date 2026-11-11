@@ -525,3 +525,10 @@ textarea { resize: vertical; min-height: 96px; }
 .step-parts { margin-top: 4px; font-size: 13px; }
 .step-parts summary { cursor: pointer; color: var(--ink-2); }
 .step-parts ul { margin: 4px 0 0; padding-left: 1.2em; display: grid; gap: 2px; }
+
+/* Files attached to a message */
+.attached { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 10px 6px; }
+.chip-x { border: 0; background: transparent; color: inherit; cursor: pointer; padding: 0 0 0 4px; font-size: 14px; line-height: 1; }
+.attached-file { margin-top: 6px; font-size: 13px; }
+.attached-file summary { cursor: pointer; }
+.attached-file pre { white-space: pre-wrap; max-height: 280px; overflow: auto; font-size: 12px; margin: 6px 0 0; }

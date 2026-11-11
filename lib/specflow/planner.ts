@@ -315,8 +315,99 @@ function dropRepeatedQuestions(plan: Plan) {
 export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
 export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string };
 
+/**
+ * M14: a long brief marked into forms ("=== FORM: Name ===" lines) is planned one form at a time, in parallel, then
+ * merged. One planner reply for many forms dropped some silently (11 Nov: 4 of 7 forms) and risked the time limit.
+ */
+export function splitForms(request: string): { preamble: string; forms: { title: string; text: string }[] } | null {
+  const marks = [...request.matchAll(/^={3,}\s*FORM:\s*(.+?)\s*=*\s*$/gim)];
+  if (marks.length < 2) return null;
+  return {
+    preamble: request.slice(0, marks[0].index).trim(),
+    forms: marks.map((m, i) => ({ title: m[1].trim(), text: request.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index : undefined).trim() })),
+  };
+}
+
+// Plan text that is never a step id, even when it happens to match one (a label, an option, a stage name...).
+const TEXT_KEYS = new Set(['name', 'label', 'hint', 'subject', 'body', 'summary', 'equals', 'copy_of', 'based_on', 'after_step', 'to_step', 'step', 'description', 'options', 'add_options', 'list', 'type', 'object', 'action', 'by', 'event', 'sla_action', 'resolve_days', 'targets']);
+function renameRefs<T>(v: T, map: Map<string, string>, key?: string): T {
+  if (typeof v === 'string') return (key && TEXT_KEYS.has(key) ? v : map.get(v) ?? v) as T;
+  if (Array.isArray(v)) return v.map((x) => renameRefs(x, map, key)) as T;
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, renameRefs(x, map, k)])) as T;
+  return v;
+}
+const pascal = (t: string) => t.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('');
+
+/** Merge per-form plans: ids made unique per form, identical objects kept once, clashing field names made unique. */
+export function mergePlans(parts: { title: string; plan: Plan }[], request: string): Plan {
+  const steps: PlanStep[] = [];
+  const seen = new Map<string, string>(); // what a step makes → the id kept for it
+  const names = new Map<string, string>(); // created field name → its key, to catch two different fields with one name
+  const alias = new Map<string, string>();
+  const keyOf = (s: PlanStep) => {
+    if (s.action === 'reuse') return `reuse|${s.object}|${String(s.match?.name ?? '').toLowerCase()}`;
+    if (s.action !== 'create') return null;
+    if (s.object === 'field') return `field|${String(s.label ?? s.name).trim().toLowerCase()}|${s.type}|${[...(s.options ?? [])].map((o) => o.toLowerCase()).sort().join(';')}|${s.dynamic?.list ?? ''}`;
+    return `${s.object}|${String(s.name ?? '').trim().toLowerCase()}`;
+  };
+  parts.forEach(({ title, plan }, i) => {
+    const ids = new Map(plan.steps.map((s) => [s.id, `f${i + 1}_${s.id}`] as [string, string]));
+    for (const raw of plan.steps) {
+      const s = renameRefs({ ...raw }, ids);
+      s.id = ids.get(raw.id)!;
+      const key = keyOf(s);
+      if (key && seen.has(key)) { alias.set(s.id, seen.get(key)!); continue; }
+      if (key) seen.set(key, s.id);
+      if (s.object === 'field' && s.action === 'create' && s.name) {
+        const n = s.name.toLowerCase();
+        if (names.has(n) && names.get(n) !== key) s.name = `${s.name}${pascal(title)}`;
+        names.set(s.name.toLowerCase(), key!);
+      }
+      steps.push(s);
+    }
+  });
+  const merged = steps.map((s) => renameRefs(s, alias));
+  const tag = (title: string, xs: string[] = []) => xs.map((x) => (x.toLowerCase().includes(title.toLowerCase()) ? x : `${title}: ${x}`));
+  return {
+    request,
+    reply: parts.map(({ title, plan }) => `${title}: ${plan.reply ?? ''}`.trim()).join('\n'),
+    steps: merged,
+    existing_coverage: parts.flatMap(({ plan }) => plan.existing_coverage ?? []),
+    unsupported: parts.flatMap(({ title, plan }) => tag(title, plan.unsupported)),
+    assumptions: parts.flatMap(({ title, plan }) => tag(title, plan.assumptions)),
+    questions: parts.flatMap(({ title, plan }) => tag(title, plan.questions)),
+    choices: parts.flatMap(({ title, plan }) => (plan.choices ?? []).map((c) => ({ ...c, question: c.question.toLowerCase().includes(title.toLowerCase()) ? c.question : `${title}: ${c.question}` }))),
+  };
+}
+
+async function planInParts(inventory: Inventory, request: string, split: NonNullable<ReturnType<typeof splitForms>>, ctx: PlanContext, opts: GenerateOptions): Promise<PlanResult> {
+  const n = split.forms.length;
+  let done = 0;
+  opts.onStage?.('planning', `${n} forms, one at a time`);
+  const results = await Promise.all(
+    split.forms.map(async (f, i) => {
+      const text = `${split.preamble}\n\nThis is part ${i + 1} of ${n} of a larger request. Plan ONLY the form "${f.title}" below; the other forms are planned separately and merged afterwards. Create every field this form needs, even if another form needs the same one: identical fields (same label, type and options) are merged automatically.\n\n=== FORM: ${f.title} ===\n${f.text}`;
+      const r = await generatePlan(inventory, text, { requester: ctx.requester }, { signal: opts.signal, cacheKey: opts.cacheKey });
+      opts.onStage?.('planning', `${++done} of ${n} forms planned`);
+      return { title: f.title, ...r };
+    }),
+  );
+  const ok = results.filter((r) => r.plan) as { title: string; plan: Plan; errors: string[]; model: string }[];
+  opts.onStage?.('checking');
+  const plan = mergePlans(ok.map((r) => ({ title: r.title, plan: r.plan })), request);
+  const { validate } = makePlanner(inventory, request, ctx);
+  const errors = [
+    ...results.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this form (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`),
+    ...validate(plan),
+  ];
+  if (plan) dropRepeatedQuestions(plan);
+  return { plan, errors, model: results[0]?.model ?? '' };
+}
+
 /** Ask the model, check the plan, send the problems back once for a fix. Never touches Halo. */
 export async function generatePlan(inventory: Inventory, request: string, ctx: PlanContext = {}, opts: GenerateOptions = {}): Promise<PlanResult> {
+  const split = ctx.previous ? null : splitForms(request);
+  if (split) return planInParts(inventory, request, split, ctx, opts);
   const { SYSTEM, userMsg, validate } = makePlanner(inventory, request, ctx);
   const revising = Boolean(ctx.previous);
   const effort = revising ? ((process.env.PLANNER_REVISE_EFFORT as 'low' | undefined) ?? 'low') : undefined;

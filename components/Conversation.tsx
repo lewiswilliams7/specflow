@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconArrowUp, IconCheck, IconCopy, IconPencil, IconStop } from '@/components/icons';
 import { Choices } from '@/components/Choices';
+import { ATTACH_TYPES, type Attached, readAttachment, withAttachments } from '@/lib/attachments';
 import { Mark } from '@/components/SiteChrome';
 
 export type TurnView = { id: string; message: string; planner: ReactNode };
@@ -34,6 +35,28 @@ const STAGE: Record<string, (d?: string) => string> = {
   saving: () => 'Saving',
 };
 
+/** A sent message: what was typed in full, attached files as a name you can open. */
+function MessageText({ text }: { text: string }) {
+  const parts = text.split(/\n*=== ATTACHED FILE: (.+?) ===\n/);
+  if (parts.length === 1) return <>{text}</>;
+  const files: { name: string; body: string }[] = [];
+  for (let i = 1; i < parts.length; i += 2) files.push({ name: parts[i], body: parts[i + 1] ?? '' });
+  return (
+    <>
+      {parts[0]}
+      {files.map((f) => (
+        <details key={f.name} className="attached-file">
+          <summary>Attached: {f.name}</summary>
+          <pre>{f.body}</pre>
+        </details>
+      ))}
+    </>
+  );
+}
+
+/** Long briefs and attached form designs fit; the server keeps the same limit. */
+const MAX_MESSAGE = 120000;
+
 const fmt = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
 
 /** Chat with the planner. Enter sends, Shift+Enter adds a line, Stop cancels, Edit replans from that message. */
@@ -45,6 +68,9 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
   const [stopped, setStopped] = useState(false);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [copied, setCopied] = useState('');
+  const [files, setFiles] = useState<Attached[]>([]);
+  const [reading, setReading] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
   const [now, setNow] = useState(Date.now());
   const abort = useRef<AbortController | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -85,8 +111,14 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
 
   const send = useCallback(
     async (message: string, editOf?: string) => {
-      const text = message.trim();
+      const attached = editOf ? [] : files;
+      const text = withAttachments(message, attached).trim();
       if (!text || pending || blocked) return;
+      if (text.length > MAX_MESSAGE) {
+        setError(`That's ${text.length.toLocaleString()} characters; the limit is ${MAX_MESSAGE.toLocaleString()}. Split it into two messages, or remove a file.`);
+        return;
+      }
+      if (!editOf) setFiles([]);
       setError('');
       setStopped(false);
       setEditing(null);
@@ -97,7 +129,10 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
       setNow(Date.now());
       const restore = () => {
         if (editOf) setEditing({ id: editOf, text });
-        else setDraft(text);
+        else {
+          setDraft(message);
+          setFiles(attached);
+        }
       };
       try {
         const res = await fetch('/api/turns', {
@@ -144,7 +179,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
         abort.current = null;
       }
     },
-    [pending, blocked, instanceId, threadId, router],
+    [pending, blocked, instanceId, threadId, router, files],
   );
 
   // A choice button under a plan (rule M13) sends its answer as the next message.
@@ -188,7 +223,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           rows={1}
-          maxLength={8000}
+          maxLength={MAX_MESSAGE}
           placeholder={blocked ?? placeholder}
           disabled={Boolean(blocked)}
           autoFocus
@@ -199,14 +234,49 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
             }
           }}
         />
+        {files.length ? (
+          <div className="attached" aria-label="Attached files">
+            {files.map((f) => (
+              <span key={f.name} className="chip" title={`${f.text.length.toLocaleString()} characters`}>
+                {f.name}
+                <button type="button" className="chip-x" aria-label={`Remove ${f.name}`} onClick={() => setFiles((fs) => fs.filter((x) => x.name !== f.name))}>×</button>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="composer-bar">
+          <input
+            ref={picker}
+            type="file"
+            accept={ATTACH_TYPES}
+            multiple
+            hidden
+            onChange={async (e) => {
+              const list = [...(e.target.files ?? [])];
+              e.target.value = '';
+              if (!list.length) return;
+              setReading(true);
+              setError('');
+              try {
+                const read = await Promise.all(list.map(readAttachment));
+                setFiles((fs) => [...fs.filter((f) => !read.some((r) => r.name === f.name)), ...read]);
+              } catch (err) {
+                setError((err as Error).message || 'Couldn’t read that file.');
+              } finally {
+                setReading(false);
+              }
+            }}
+          />
+          <button type="button" className="btn btn-quiet btn-sm" onClick={() => picker.current?.click()} disabled={busy || Boolean(blocked) || reading} title="Attach a spreadsheet, CSV or text file">
+            {reading ? 'Reading…' : 'Attach file'}
+          </button>
           <span className="subtle">Shift+Enter for a new line</span>
           {busy ? (
             <button className="btn btn-secondary send" type="button" onClick={stop} aria-label="Stop">
               <IconStop />
             </button>
           ) : (
-            <button className="btn btn-primary send" type="submit" disabled={!draft.trim() || Boolean(blocked)} aria-label="Send">
+            <button className="btn btn-primary send" type="submit" disabled={(!draft.trim() && !files.length) || Boolean(blocked) || reading} aria-label="Send">
               <IconArrowUp />
             </button>
           )}
@@ -276,7 +346,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
               </form>
             ) : (
               <div className="msg-user">
-                <div className="bubble">{t.message}</div>
+                <div className="bubble"><MessageText text={t.message} /></div>
                 <div className="msg-tools">
                   <button className="btn btn-quiet btn-icon" type="button" onClick={() => copy(t.id, t.message)} aria-label="Copy message" title="Copy">
                     {copied === t.id ? <IconCheck /> : <IconCopy />}
@@ -294,7 +364,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
         {pending ? (
           <div className="turn">
             <div className="msg-user">
-              <div className="bubble">{pending.message}</div>
+              <div className="bubble"><MessageText text={pending.message} /></div>
             </div>
             <div className="msg-planner">
               <div className="thinking" role="status">

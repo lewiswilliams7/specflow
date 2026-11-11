@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   const { supabase, user, workspace, limits } = await getContext();
 
   const body = (await req.json().catch(() => ({}))) as Body;
-  const message = String(body.message ?? '').trim().slice(0, 8000);
+  const message = String(body.message ?? '').trim().slice(0, 120000); // matches the composer (long briefs, attached files)
   if (!message) return json(400, 'Write a message first.');
 
   // Which thread and instance.
