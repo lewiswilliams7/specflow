@@ -217,7 +217,9 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       const expectedName = t.storedName?.(step) ?? step.name ?? '';
       const existing = await findByName(t.resource, expectedName, t.nameKey);
       if (existing) {
-        refs[step.id] = { id: existing.id as number, name: nameOf(existing, t.nameKey), label: step.label };
+        // Keep the full record: a later show rule or approval rule needs a new dropdown's options (V1b).
+        const row = firstRecord(await halo.get(`/${t.resource}/${existing.id}`, { includedetails: 'true' })) ?? existing;
+        refs[step.id] = { id: existing.id as number, name: nameOf(existing, t.nameKey), label: step.label, row };
         record({ outcome: 'already exists', id: existing.id });
         say(`= ${label}  already exists (id ${existing.id}), reused`);
         continue;
@@ -252,6 +254,8 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
 
         // Read back and check the name stuck: the cheapest proof it really saved.
         const back = firstRecord(await halo.get(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
+        // V1b: later steps in this build read the new record (a dropdown's options for a show rule).
+        if (back) refs[step.id] = { ...refs[step.id], row: back };
         const nameOk = nameOf(back, t.nameKey) === expectedName;
         if (!nameOk) warn(`Read-back mismatch: expected name "${expectedName}", got "${nameOf(back, t.nameKey)}"`);
         const extra = back && t.verifyCreate ? t.verifyCreate(back) : [];
