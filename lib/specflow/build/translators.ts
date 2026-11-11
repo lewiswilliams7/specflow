@@ -82,6 +82,11 @@ export const SPIKE_MAP = {
   emailBrand: {
     keptByHalo: true as boolean | null,
   },
+  /** Field help text (rule F11). Every field template carries "hint" and Halo's form calls it "Hint for Field", but
+   *  nothing has been saved and read back yet: learning run 27 does that. null until then. */
+  fieldHint: {
+    key: null as string | null,
+  },
   /** Halo $variables (rule EM2), case-insensitive. Evidence: learning run 16, every whole-word $variable in the subjects
    *  and HTML of the instance's 94 email templates (97 distinct). Meanings in `common` are from how Halo's own templates
    *  use them ("Hi $firstname,", "Logged $DATEOCCURED", "changed to $status", "Technician Assigned: $assignedto"). */
@@ -306,6 +311,12 @@ export const FEATURES: Feature[] = [
 - "Email the requester when it moves to <status>": Halo's status settings don't send an email when a ticket enters a status (EM3). Do it on the action that moves the ticket there: outcome with new_status and send_email (E1), or outcome set: { send_email } on an existing one. Say in assumptions that the email goes when an agent uses that button, not when the status is changed some other way.`,
   },
   {
+    key: 'field_hints',
+    name: 'field help text (hints)',
+    sections: ['fieldHint'],
+    prompt: `- field create may have hint: the help text Halo shows with the field, on the agent form and the portal. Use the brief's help text word for word. field update set: { hint } changes it on an existing field. Halo keeps ONE hint per field, not per form: if a shared field has different help text on different forms, use the most general one and say which in assumptions. A field that is also on ticket types the brief doesn't mention: say so in assumptions, since its hint changes there too.`,
+  },
+  {
     key: 'email_branding',
     name: 'branded email layouts (logo, colour and footer)',
     sections: ['emailBrand'],
@@ -348,6 +359,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'ticket_template') keys.add('child_tickets');
   if (step.set?.show_field_when?.length) keys.add('visibility');
   if (step.brand) keys.add('email_branding');
+  if (step.hint !== undefined || step.set?.hint !== undefined) keys.add('field_hints');
   if (step.set?.acknowledgement_email) keys.add('acknowledgement');
   return FEATURES.filter((f) => keys.has(f.key));
 }
@@ -641,6 +653,8 @@ export interface PlanStep {
   name?: string;
   /** email_template: the workspace's branding (rule EM1). Added by the app or the run, never by the planner. */
   brand?: EmailBrand;
+  /** field: help text shown with the field (rule F11). */
+  hint?: string;
   label?: string;
   type?: string;
   options?: string[];
@@ -702,6 +716,8 @@ export interface PlanStep {
     // field: add dropdown/multi-select options, change the label
     add_options?: string[];
     label?: string;
+    /** field: help text (rule F11). */
+    hint?: string;
     // approval_group / team
     add_members?: string[];
     // outcome: email the requester when the button is pressed
@@ -954,6 +970,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.name = bareFieldName(step.name);
       set(p, m.label, step.label, 'field label', warn);
       p.hint = '';
+      if (step.hint !== undefined) {
+        if (SPIKE_MAP.fieldHint.key) p[SPIKE_MAP.fieldHint.key] = step.hint;
+        else gap('field help text (hint)', warn);
+      }
       p.summary = FIELD_SUMMARY_PLACEHOLDER; // cleared by afterCreate (rule F6)
       p.defaultvalue = '';
       // Rule F10: always a ticket field, whatever the template was. usage 1010 (custom table) never stores ticket values.
@@ -976,6 +996,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const st = step.set ?? {};
       const out: Record<string, unknown> = {};
       if (st.label && m.label) out[m.label] = st.label;
+      if (st.hint !== undefined) {
+        if (SPIKE_MAP.fieldHint.key) out[SPIKE_MAP.fieldHint.key] = st.hint;
+        else gap('field help text (hint)', warn);
+      }
       if (st.add_options?.length && m.options) {
         // Existing values keep their ids; new ones go on the end as { name } (same shape as on create).
         const values = ((current[m.options] as Row[]) ?? []).map((v) => ({ ...v }));
@@ -992,6 +1016,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const m = SPIKE_MAP.field;
       const out: string[] = [];
       if (m.label && changes[m.label] !== undefined && back[m.label] !== changes[m.label]) out.push(`label is ${JSON.stringify(back[m.label])}`);
+      const hk = SPIKE_MAP.fieldHint.key;
+      if (hk && changes[hk] !== undefined && back[hk] !== changes[hk]) out.push(`hint is ${JSON.stringify(back[hk])}`);
       if (m.options && changes[m.options]) {
         const have = ((back[m.options] as Row[]) ?? []).map((v) => String(v.name).toLowerCase());
         for (const v of changes[m.options] as Row[]) if (!have.includes(String(v.name).toLowerCase())) out.push(`option "${v.name}" missing after saving`);
