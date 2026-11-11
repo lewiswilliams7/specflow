@@ -71,6 +71,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
     return () => window.removeEventListener('specflow:reply', fill);
   }, []);
 
+
   // Grow the box with its content.
   useLayoutEffect(() => {
     const el = box.current;
@@ -142,6 +143,13 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
     },
     [pending, blocked, instanceId, threadId, router],
   );
+
+  // A choice button under a plan (rule M13) sends its answer as the next message.
+  useEffect(() => {
+    const answer = (e: Event) => void send((e as CustomEvent<string>).detail);
+    window.addEventListener('specflow:send', answer);
+    return () => window.removeEventListener('specflow:send', answer);
+  }, [send]);
 
   const stop = () => abort.current?.abort();
   const copy = async (id: string, text: string) => {

@@ -152,7 +152,7 @@ export function counts(plan: Plan | null) {
     changes: steps.filter((s) => s.action !== 'reuse').length,
     reused: steps.filter((s) => s.action === 'reuse').length,
     cant: plan?.unsupported?.length ?? 0,
-    questions: plan?.questions?.length ?? 0,
+    questions: (plan?.questions?.length ?? 0) + (plan?.choices?.length ?? 0),
   };
 }
 

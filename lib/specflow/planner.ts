@@ -54,7 +54,7 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   const SYSTEM = `You plan Halo ITSM configuration changes. You output ONE JSON object (no prose) that a deterministic builder executes after a human approves it.
 
   THE BUILDER CAN ONLY DO THIS (anything else is unsupported):
-  Plan = { "request": string, "reply": string, "existing_coverage": [{ "requirement": string, "status": "built" | "partial" | "missing", "existing": string }], "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[] }
+  Plan = { "request": string, "reply": string, "existing_coverage": [{ "requirement": string, "status": "built" | "partial" | "missing", "existing": string }], "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[], "choices": [{ "question": string, "options": string[] }] }
   Every step: { "id": unique snake_case, "object": one of below, "action": "create" | "reuse" | "update" }
   - reuse: { "match": { "name": exact existing name from the inventory } }. Use for anything that already exists.
   - create needs "name". Optional "based_on": exact name of an existing record of the same kind to copy settings from (choose a sensible, plain one; say which in assumptions).
@@ -103,6 +103,7 @@ ${readyFeaturePrompt()}
   - Ticket types: if an existing type already covers a requested type (e.g. "Change Request" for normal changes), update it; create a new type only for a genuinely separate one.
   - Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
   - SLA targets: use only priority names that appear in inventory.details.sla_targets. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities.
+  - CHOICES (rule M13): when the request leaves a decision with a few clear answers, ask it in choices, not questions: { "question": short plain question naming the field or object, "options": 2 to 4 short answers }. Typical: a dropdown whose options aren't given ("Site / Building: where should the options come from?" options "A live list from Halo's sites", "A fixed list I'll give you", "Something else"); reuse an existing field or make a new one; which of two overlapping fields to keep. Build nothing for that part until it's answered (leave that step out and say so in reply). At most 3 choices; a choice the inventory or the request already answers is not a choice.
   - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
   - The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
   - A rule on a number (cost over £300, more than 10 users) is captured as its OWN new dropdown field holding only the bands ("Under £300", "£300 or more"), placed on the form. Never add band options to an existing field, and never mix the band into another answer ("Laptop (£300 or more)"). Then use a rules stage for the approval that depends on it (P7). (M5)
@@ -246,7 +247,7 @@ Return ONLY this JSON (a patch, not the whole plan):
   "remove_steps": [ids of current steps to drop],
   "upsert_steps": [complete steps to add, or to replace the current step with the same id],
   "existing_coverage": [only if it changed: the complete new list],
-  "unsupported": [the complete current list], "assumptions": [the complete current list], "questions": [the complete current list: usually fewer than before, never repeated] }
+  "unsupported": [the complete current list], "assumptions": [the complete current list], "questions": [the complete current list: usually fewer than before, never repeated], "choices": [the complete current list: drop any the LATEST message answers] }
 Re-check every item in unsupported against what the builder can do NOW (the list above): build any that are now supported. Never drop a step the user didn't ask to drop; if you do drop one, name it in reply (M11).
 If the message only answers questions and the answers change nothing, upsert nothing: drop the answered questions and record the answers in assumptions. Every change your reply describes MUST be in upsert_steps or remove_steps (rule M8).
 `;
@@ -261,6 +262,7 @@ type Patch = {
   unsupported?: string[];
   assumptions?: string[];
   questions?: string[];
+  choices?: Plan['choices'];
 };
 
 /** Apply a revision patch, then order steps so every ref is defined before it is used. */
@@ -293,6 +295,7 @@ export function applyPatch(base: Plan, patch: Patch): Plan {
     unsupported: patch.unsupported ?? base.unsupported,
     assumptions: patch.assumptions ?? base.assumptions,
     questions: patch.questions ?? [],
+    choices: patch.choices ?? [],
   };
 }
 

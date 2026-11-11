@@ -25,6 +25,7 @@ function plannerNote(plan: Plan | null, errors: string[]): string {
     changes.length ? `Planned ${changes.length} change(s): ${changes.join('; ')}.` : 'Planned no changes.',
     plan.unsupported?.length ? `Couldn't do: ${plan.unsupported.join(' | ')}.` : '',
     plan.questions?.length ? `Asked: ${plan.questions.join(' | ')}` : '',
+    plan.choices?.length ? `Offered choices: ${plan.choices.map((c) => `${c.question} (${c.options.join(' / ')})`).join(' | ')}` : '',
   ].filter(Boolean).join(' ');
 }
 

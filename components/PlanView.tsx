@@ -20,7 +20,7 @@ const COVER: Record<string, { cls: string; sign: string; label: string }> = {
 export type PlanState = 'ready' | 'questions' | 'problems';
 export function planState(plan: Plan | null, errors: string[]): PlanState {
   if (!plan || errors.length) return 'problems';
-  return plan.questions?.length ? 'questions' : 'ready';
+  return plan.questions?.length || plan.choices?.length ? 'questions' : 'ready';
 }
 
 export function StateBadge({ state, questions }: { state: PlanState; questions?: number }) {

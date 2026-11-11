@@ -805,6 +805,9 @@ export interface Plan {
   assumptions?: string[];
   /** Planner output: things it needs answered before the plan is safe to build. */
   questions?: string[];
+  /** Planner output (M13): decisions with a few clear answers, shown as buttons. The part they decide isn't built
+   *  until the user picks one. */
+  choices?: { question: string; options: string[] }[];
   /** App planner: this turn was a new request, so it started a fresh plan instead of revising the last one (M12). */
   fresh?: boolean;
 }

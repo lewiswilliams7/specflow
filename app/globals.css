@@ -511,3 +511,9 @@ textarea { resize: vertical; min-height: 96px; }
 .brief figcaption { font-size: 12.5px; font-weight: 600; color: var(--ink-3); margin-bottom: 8px; }
 .brief blockquote { margin: 0; white-space: pre-wrap; color: var(--ink); font-size: 14.5px; line-height: 1.6; }
 .example-note { font-size: 14px; }
+
+/* Choices the planner asks before building a part (rule M13). */
+.choices .choice { margin-top: 10px; }
+.choices .choice p { margin: 0 0 6px; }
+.choice-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.choice-num { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 4px; font-size: 11px; background: color-mix(in srgb, currentColor 12%, transparent); margin-right: 2px; }

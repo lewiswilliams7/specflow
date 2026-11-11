@@ -1,3 +1,4 @@
+import { Choices } from '@/components/Choices';
 import { Mark } from '@/components/SiteChrome';
 import { type BuildTarget, PlanView, planState, StateBadge } from '@/components/PlanView';
 import { counts, diffPlans, humanise, type Inv } from '@/lib/specflow/describe';
@@ -22,7 +23,7 @@ export function PlannerTurn({ plan, errors, previous, inventory, latest, planId,
       <div className="planner-who">
         <Mark size={18} />
         <span>{site.name}</span>
-        {latest ? <StateBadge state={state} questions={plan?.questions?.length} /> : null}
+        {latest ? <StateBadge state={state} questions={(plan?.questions?.length ?? 0) + (plan?.choices?.length ?? 0)} /> : null}
       </div>
       {plan?.fresh ? <p className="subtle">A new request, so this is a fresh plan. The earlier plan above is unchanged and can still be built.</p> : null}
       <p className="reply">{reply}</p>
@@ -35,6 +36,8 @@ export function PlannerTurn({ plan, errors, previous, inventory, latest, planId,
           {diff.removed.map((x) => <div key={`r${x}`}><span className="sign" style={{ color: 'var(--danger)' }}>−</span>{x} (dropped)</div>)}
         </div>
       ) : null}
+
+      {plan?.choices?.length ? <Choices choices={plan.choices.map((c) => ({ question: humanise(c.question, inventory), options: c.options }))} live={latest} /> : null}
 
       {plan?.questions?.length ? (
         <div className="questions">
