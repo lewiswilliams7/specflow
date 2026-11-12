@@ -48,7 +48,16 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
     ticket_type: inventory.ticket_types, field: inventory.custom_fields, field_group: inventory.field_groups,
     workflow: Object.keys(inventory.workflows_and_their_steps), status: inventory.statuses, outcome: inventory.actions,
     sla: inventory.slas, approval_process: inventory.approval_processes, approval_group: inventory.approval_groups, team: inventory.teams,
+    category: (inventory as unknown as { categories?: string[] }).categories ?? [],
   };
+
+  // Names of the same kind of object: "Payroll" the category isn't "Payroll" the ticket type (11 Nov: a plan updated a
+  // ticket type that didn't exist, and the fix then refused to create it, both because a category had that name).
+  const sameKind = (object: string): Set<string> | null => {
+    const names = NAMES_BY_OBJECT[object];
+    return names ? new Set((Array.isArray(names) ? names : Object.keys(names ?? {})).map((n) => n.toLowerCase())) : null;
+  };
+  const exists = (object: string, name: string) => (sameKind(object) ?? all).has(name.toLowerCase());
 
   const examples = EXAMPLES.map((e) => JSON.stringify(e)).join('\n\n');
 
@@ -150,9 +159,9 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       if (s.action === 'create' && !s.name) errors.push(`${where}: create needs a name`);
       if (s.object === 'agent' && s.action === 'create') errors.push(`${where}: agents can only be reused`);
       if (s.action === 'update' && !s.set) errors.push(`${where}: update needs "set"`);
-      if ((s.action === 'reuse' || s.action === 'update') && !all.has(String(s.match?.name ?? '').toLowerCase()) && !createdHere.has(`${s.object}:${String(s.match?.name ?? '').toLowerCase()}`))
-        errors.push(`${where}: "${s.match?.name}" is not in the inventory`);
-      if (s.based_on && !all.has(s.based_on.toLowerCase())) errors.push(`${where}: based_on "${s.based_on}" is not in the inventory`);
+      if ((s.action === 'reuse' || s.action === 'update') && !exists(s.object, String(s.match?.name ?? '')) && !createdHere.has(`${s.object}:${String(s.match?.name ?? '').toLowerCase()}`))
+        errors.push(`${where}: there is no ${s.object.replace(/_/g, ' ')} named "${s.match?.name}" in the inventory${all.has(String(s.match?.name ?? '').toLowerCase()) ? ' (something else has that name)' : ''}`);
+      if (s.based_on && !exists(s.object, s.based_on)) errors.push(`${where}: based_on "${s.based_on}" is not in the inventory`);
       if (s.based_on && s.name && s.based_on.toLowerCase() === s.name.toLowerCase()) errors.push(`${where}: based_on is the thing being created; pick an existing record to copy from`);
       // A new field whose label means the same as an existing field's label is a duplicate (CFEmergencyReason vs CFemergencyChangeReason).
       if (s.object === 'field' && s.action === 'create' && s.label) {
@@ -174,8 +183,8 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       if ((plan.questions?.length ?? 0) > 4 && s === plan.steps[0]) errors.push(`${plan.questions!.length} questions: keep at most 4, and drop any that inventory.details answers`);
       if (s.action === 'create' && s.name && / v\d+$|\(copy\)|\bcopy of\b/i.test(s.name))
         errors.push(`${where}: "${s.name}" looks like a copy of something that exists; reuse or update the original, or explain in questions`);
-      if (s.action === 'create' && s.name && all.has(s.name.toLowerCase()))
-        errors.push(`${where}: "${s.name}" already exists (names are case-insensitive): reuse it, or pick a different name`);
+      if (s.action === 'create' && s.name && exists(s.object, s.name))
+        errors.push(`${where}: a ${s.object.replace(/_/g, ' ')} named "${s.name}" already exists (names are case-insensitive): reuse it, or pick a different name`);
       if (s.copy_of && !workflowSteps[s.copy_of]) errors.push(`${where}: copy_of "${s.copy_of}" is not an existing workflow`);
       const inserts = [...(s.insert_steps ?? []), ...(s.insert_step ? [s.insert_step] : []), ...(s.set?.insert_steps ?? [])];
       const baseWf = s.copy_of ?? (s.object === 'workflow' && s.action === 'update' ? s.match?.name : undefined);
