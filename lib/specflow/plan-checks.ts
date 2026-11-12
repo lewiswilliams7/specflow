@@ -2,7 +2,7 @@
  * Deterministic plan checks for rules M5 to M7 (HALO_RULES.md). The model can ignore a prompt rule; it can't get
  * past these. Keep identical to the spike's spike/lib/plan-checks.ts (only the import line differs).
  */
-import { NON_MOVING_ACTION, SPIKE_MAP, featureReady, featuresOf, refsOf, type Plan, type PlanStep } from './build/translators';
+import { CLOSING_ACTION, NON_MOVING_ACTION, SPIKE_MAP, featureReady, featuresOf, refsOf, type Plan, type PlanStep } from './build/translators';
 import { brandProblems, variablesIn } from './build/email-brand';
 
 export type CheckContext = {
@@ -238,6 +238,18 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
       if (steps.find((x) => x.id === c.ticket_type)?.object !== 'ticket_type') errors.push(`step "${s.id}": child "${c.summary}" needs ticket_type: a ticket_type step (got "${c.ticket_type}")`);
       if (c.team && steps.find((x) => x.id === c.team)?.object !== 'team') errors.push(`step "${s.id}": child "${c.summary}" team must be a team step`);
     }
+  }
+
+  // 12 Nov enterprise test: "email the requester when it's closed" was put on an existing action called Review Change.
+  // An email that says the ticket is closed or resolved goes only on an action that closes or resolves it.
+  for (const s of steps) {
+    if (s.object !== 'outcome') continue;
+    const tplRef = s.action === 'update' ? s.set?.send_email : s.send_email;
+    const tpl = steps.find((x) => x.id === tplRef);
+    const tplName = String(tpl?.name ?? tpl?.match?.name ?? '');
+    const actionName = String(s.name ?? s.match?.name ?? '');
+    if (tpl && /clos|resolv|complet|done/i.test(tplName) && !CLOSING_ACTION.test(actionName))
+      errors.push(`step "${s.id}": "${actionName}" doesn't close tickets, so it can't send "${tplName}". Use the action that closes or resolves the ticket on this workflow, or a new one`);
   }
 
   // Round 30 objects: every ref points at the right kind of step; nothing invented.

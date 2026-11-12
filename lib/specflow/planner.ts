@@ -114,7 +114,7 @@ ${readyFeaturePrompt()}
     - partial: it exists but is missing something. Reuse it and add only the missing pieces (or an update step).
     - missing: create it.
     Never create a parallel copy of something that exists ("v2", "(People Ops)", "New ..."): update it. If the change isn't updatable, say so in unsupported.
-    A field matches only if its name/label fits the request; when unsure it has the right options, ask in questions rather than reuse silently.
+    A field matches only if its name/label fits the request AND, for a dropdown or multi-select, its options are exactly the ones asked for (same wording; extra existing options are fine only if the request's are all there). Different options: create a new field. Never map the request's options onto different existing ones.
   - Reuse what exists (exact names from the inventory), but only when it matches what the request asks for. Never create something whose name matches an existing one ignoring case (CFLaptopType vs CFlaptopType). Never invent names of existing things: anything not in the inventory must be created by an earlier step.
   - When the request describes stages a ticket moves through, build them: copy a workflow and add the stages with insert_steps.
   - based_on must name an EXISTING record, never the thing being created. Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
@@ -435,8 +435,13 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
     ...(() => {
       const seenQ = new Set<string>();
       const all = parts.flatMap(({ title, plan }) => (plan.questions ?? []).map((q) => ({ q, key: q.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(), title })));
-      const unique = all.filter((x) => (seenQ.has(x.key) ? false : (seenQ.add(x.key), true)));
-      const shown = unique.slice(0, 6).map((x) => (x.q.toLowerCase().includes(x.title.toLowerCase()) || all.filter((y) => y.key === x.key).length > 1 ? x.q : `${x.title}: ${x.q}`));
+      // Same question in other words (12 Nov: two parts asked about line managers synced from Entra differently).
+      const STOP = new Set(['the', 'a', 'an', 'to', 'so', 'can', 'do', 'you', 'your', 'from', 'for', 'of', 'and', 'or', 'is', 'are', 'each', 'work', 'be', 'it', 'this', 'that', 'in', 'on', 'with', 'users', 'user']);
+      const words = (k: string) => new Set(k.split(' ').filter((w) => w.length > 2 && !STOP.has(w)));
+      const same = (a: string, b: string) => { const A = words(a), B = words(b); const both = [...A].filter((w) => B.has(w)).length; return both / Math.max(1, Math.min(A.size, B.size)) >= 0.6; };
+      const kept: string[] = [];
+      const unique = all.filter((x) => (seenQ.has(x.key) || kept.some((k) => same(k, x.key)) ? false : (seenQ.add(x.key), kept.push(x.key), true)));
+      const shown = unique.slice(0, 6).map((x) => (x.q.toLowerCase().includes(x.title.toLowerCase()) || all.filter((y) => same(y.key, x.key)).length > 1 ? x.q : `${x.title}: ${x.q}`));
       const extra = unique.slice(6).map((x) => `Not asked yet (tell us if it matters): ${x.title}: ${x.q}`);
       return { questions: shown, assumptions: [...parts.flatMap(({ title, plan }) => tag(title, plan.assumptions)), ...extra] };
     })(),
