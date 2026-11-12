@@ -107,6 +107,8 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
     sites: await list('Site').then((r) => r.map(nameOf), () => [] as string[]),
     working_hours: await list('Workday').then((r) => r.map(nameOf), () => [] as string[]),
     canned_text: await list('CannedText').then((r) => r.map(nameOf), () => [] as string[]),
+    faq_lists: await list('FAQLists').then((r) => r.map(nameOf), () => [] as string[]),
+    kb_articles: await list('KBArticle').then((r) => r.map(nameOf), () => [] as string[]),
     // Rule LK1: list 11 names Halo's own lists (row id = lookupid). Names and ids only: values are checked at build time.
     lookup_lists: await list('Lookup').then((rows) => {
       const used = new Set(rows.map((r) => Number(r.lookupid)));

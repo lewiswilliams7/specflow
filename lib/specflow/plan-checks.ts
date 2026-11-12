@@ -265,6 +265,11 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s.date ?? ''))) errors.push(`step "${s.id}": a holiday needs date "YYYY-MM-DD"`);
     }
     if (s.object === 'working_hours' && s.action === 'create' && (s.start || s.end) && !(/^\d{1,2}:\d{2}$/.test(String(s.start)) && /^\d{1,2}:\d{2}$/.test(String(s.end)))) errors.push(`step "${s.id}": working hours start and end are "HH:MM"`);
+    if (s.object === 'faq_list' && s.action !== 'reuse') errors.push(`step "${s.id}": FAQ lists can only be reused for now`);
+    if (s.object === 'kb_article' && s.action === 'create') {
+      needKind(s, s.faq_list, 'faq_list', 'faq_list');
+      if (!String(s.body ?? '').trim()) errors.push(`step "${s.id}": an article needs a body`);
+    }
     if (s.object === 'canned_text' && s.action === 'create' && !String(s.text ?? '').trim()) errors.push(`step "${s.id}": canned text needs text`);
     if (s.set?.retire && s.object !== 'ticket_type') errors.push(`step "${s.id}": only a ticket type can be retired`);
     for (const r of s.set?.remove_fields ?? []) if (kindOf(r) !== 'field') errors.push(`step "${s.id}": remove_fields must list field steps (got "${r}")`);

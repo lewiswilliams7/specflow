@@ -19,6 +19,10 @@
  * show rule on a multi-select, removing a field and retiring the type, all by the builder. Plus: list names for /Lookup,
  * where role permissions live, minimal organisation / article / email rule creates (overwrite-checked).
  *
+ * Round 31 (12 Nov): knowledge base articles through the builder (twice); round 27's form tests moved here so they run
+ * from the app: a field required only when shown (three tickets logged), a read-only field, a ticket type description;
+ * roles from a name (then the IT Agent's claims), asset types from a name, and every setting on Halo's email rules.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -29,7 +33,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 30;
+export const ROUND = 31;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -201,8 +205,6 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     }
   }
 
-  log(`Round ${ROUND}: ${opts.instance} ${apply ? '(will make zz samples on the trial)' : '(read-only)'}`);
-
 
   /** Run a plan with the real builder (dry-run gate B1, apply, read-back). */
   async function prove(label: string, plan: Plan): Promise<Row[]> {
@@ -221,98 +223,148 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     }
   }
 
+
   log(`Round ${ROUND}: ${opts.instance} ${apply ? '(will build zz samples on the trial)' : '(read-only)'}`);
 
-  // ---------- 1. The new objects through the real builder, then the same plan again ----------
-  await area('builder', async () => {
-    const A = 'builder';
-    const org = (await list('Client')).rows.find((r) => own(r) && Number(r.id) !== 12); // 12 was renamed by round 28 (S1b)
-    const cat = (await list('ServiceCategory')).rows.find(own);
+  // ---------- 1. Knowledge base articles through the real builder, then again ----------
+  await area('kb', async () => {
+    const A = 'kb';
+    const faq = (await list('FAQLists')).rows.find((r) => own(r) && !r.is_group);
+    note(A, 'faq list', faq ? `${faq.id} ${nameOf(faq)}` : null);
+    if (!faq) return;
+    const plan = { request: 'Enact learning run 31: an article', steps: [
+      { id: 'faq', object: 'faq_list', action: 'reuse', match: { name: nameOf(faq) } },
+      { id: 'kb', object: 'kb_article', action: 'create', name: 'zz Enact r31 article', body: 'Restart the laptop.\n\nIf that does not help, log a ticket with the Service Desk.', faq_list: 'faq' },
+    ] } as unknown as Plan;
+    await prove('KB: create an article', plan);
+    await prove('KB again: nothing duplicated', plan);
+    const a = (await list('KBArticle')).rows.find((r) => nameOf(r) === 'zz Enact r31 article');
+    note(A, 'read back', a ? pick(await detail('KBArticle', a.id), /^(name|description|faqlists)$/) : null);
+  });
+
+  // ---------- 2. Round 27's form tests: required when shown, read-only, description ----------
+  await area('form', async () => {
+    const A = 'form';
+    const F = 'zz Enact r31 form';
+    await prove('form: fields, type and a show rule', { request: 'Enact learning run 31: form', steps: [
+      { id: 'choice', object: 'field', action: 'create', name: 'CFzzEnactR31Choice', label: 'zz Enact r31 choice', type: 'dropdown', options: ['Yes', 'No'] },
+      { id: 'reason', object: 'field', action: 'create', name: 'CFzzEnactR31Reason', label: 'zz Enact r31 reason', type: 'memo' },
+      { id: 'locked', object: 'field', action: 'create', name: 'CFzzEnactR31Locked', label: 'zz Enact r31 locked', type: 'text' },
+      { id: 'form', object: 'ticket_type', action: 'create', name: F, fields: [{ ref: 'choice', mandatory: true }, { ref: 'reason', mandatory: true }, { ref: 'locked' }] },
+      { id: 'rule', object: 'ticket_type', action: 'update', match: { name: F }, set: { show_field_when: [{ field: 'reason', when: 'choice', equals: 'Yes' }] } },
+    ] } as unknown as Plan);
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === F);
+    if (!tt) { note(A, 'skipped', 'form not built'); return; }
     const fields = (await list('FieldInfo')).rows;
-    const has = (n: string) => fields.some((f) => f.name === n);
-    note(A, 'using', { organisation: org && nameOf(org), service_category: cat && nameOf(cat).trim(), sample_fields: ['CFzzEnactSampleMulti', 'CFzzEnactSampleOtherDetails', 'CFzzEnactSampleRemoveMe'].map((n) => `${n}: ${has(n)}`) });
-    if (!org || !cat) { summary.push('✗ builder: no organisation or service category to reuse'); return; }
-    const R = 'zz Enact r30';
-    const planA = {
-      request: 'Enact learning run 30: catalogue, imports, working hours, canned text',
-      steps: [
-        { id: 'org', object: 'organisation', action: 'reuse', match: { name: nameOf(org) } },
-        { id: 'site', object: 'site', action: 'create', name: `${R} site`, organisation: 'org' },
-        { id: 'user', object: 'user', action: 'create', name: `${R} user`, firstname: 'zz Enact', surname: 'r30 user', email: 'zz.enact.r30@example.invalid', site: 'site' },
-        { id: 'multi', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleMulti' } },
-        { id: 'why', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleOtherDetails' } },
-        { id: 'gone', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleRemoveMe' } },
-        { id: 'form', object: 'ticket_type', action: 'create', name: `${R} form`, fields: [{ ref: 'multi' }, { ref: 'why', mandatory: true }, { ref: 'gone' }] },
-        { id: 'cat', object: 'service_category', action: 'reuse', match: { name: nameOf(cat).trim() } },
-        { id: 'svc', object: 'service', action: 'create', name: `${R} service`, summary: 'zz Enact r30: request the sample form', service_category: 'cat', ticket_type: 'form' },
-        { id: 'hours', object: 'working_hours', action: 'create', name: `${R} hours`, start: '08:30', end: '17:30', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
-        { id: 'xmas', object: 'holiday', action: 'create', name: `${R} Christmas`, date: '2027-12-27', working_hours: 'hours' },
-        { id: 'boxing', object: 'holiday', action: 'create', name: `${R} Boxing Day`, date: '2027-12-28', working_hours: 'hours' },
-        { id: 'canned', object: 'canned_text', action: 'create', name: `${R} canned text`, text: 'Thanks for getting in touch.\nWe are looking into this now.' },
-      ],
-    } as unknown as Plan;
-    await prove('A: create the new objects', planA);
-    await prove('A again: nothing duplicated', planA);
-    // Read-backs a person would check.
-    const hours = (await list('Workday')).rows.find((r) => nameOf(r) === `${R} hours`);
-    const hd = hours ? await detail('Workday', hours.id) : null;
-    note(A, 'working hours read back', hd ? { ...pick(hd, /^(name|start|end|alldayssame|incmonday|incsaturday|startmonday|endfriday)$/), holidays: ((hd.holidays as Row[]) ?? []).map((h) => `${String(h.date).slice(0, 10)} ${h.name}`) } : null);
-    const svc = (await list('Service')).rows.find((r) => nameOf(r) === `${R} service`);
-    note(A, 'service read back', svc ? pick(await detail('Service', svc.id), /^(name|summary|service_category_name|service_tickettype_name|showinusercatalog)$/) : null);
-    const users = (await list('Users', { search: 'zz.enact.r30@example.invalid' })).rows;
-    note(A, 'users with the r30 email', users.length);
+    const choice = await detail('FieldInfo', fields.find((f) => f.name === 'CFzzEnactR31Choice')?.id);
+    const lockId = Number(fields.find((f) => f.name === 'CFzzEnactR31Locked')?.id);
+    const opt = (n: string) => ((choice?.values as Row[]) ?? []).find((v) => v.name === n)?.id;
+    const user = (await list('Users', { search: 'zz.enact.r30@example.invalid' })).rows[0] ?? (await list('Users')).rows.find(own);
+    note(A, 'requester', user ? user.id : null);
 
-    // B: show rule on the multi-select (V2) and remove a field, by the builder.
-    await prove('B: multi-select show rule and remove a field', {
-      request: 'Enact learning run 30: form changes',
-      steps: [
-        { id: 'multi', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleMulti' } },
-        { id: 'why', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleOtherDetails' } },
-        { id: 'gone', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleRemoveMe' } },
-        { id: 'form', object: 'ticket_type', action: 'update', match: { name: `${R} form` }, set: { show_field_when: [{ field: 'why', when: 'multi', equals: 'Other' }], remove_fields: ['gone'] } },
-      ],
-    } as unknown as Plan);
-    // C: retire it.
-    await prove('C: retire the form', { request: 'Enact learning run 30: retire', steps: [{ id: 'form', object: 'ticket_type', action: 'update', match: { name: `${R} form` }, set: { retire: true } }] } as unknown as Plan);
-    note(A, 'retired form still listed', (await list('TicketType')).rows.some((t) => nameOf(t) === `${R} form`));
+    // Required only when shown: three tickets.
+    if (apply && user) {
+      const tryLog = async (answer: string, giveReason: boolean) => {
+        const cf: Row[] = [{ name: 'CFzzEnactR31Choice', value: opt(answer) }, ...(giveReason ? [{ name: 'CFzzEnactR31Reason', value: 'Enact round 31' }] : [])];
+        try {
+          const id = firstRecord(await runtime().halo.post('/Tickets', [{ tickettype_id: tt.id, summary: `zz Enact r31: ${answer}${giveReason ? ', reason given' : ', no reason'}`, details: 'Logged by Enact learning round 31.', user_id: user.id, customfields: cf }]))?.id;
+          return { logged: id };
+        } catch (e) {
+          return { refused: err(e).slice(0, 300) };
+        }
+      };
+      const hidden = await tryLog('No', false);
+      const shownMissing = await tryLog('Yes', false);
+      const shownGiven = await tryLog('Yes', true);
+      note(A, 'required when shown', { not_shown_no_reason: hidden, shown_no_reason: shownMissing, shown_reason_given: shownGiven });
+      const proven = Boolean(hidden.logged) && Boolean(shownMissing.refused) && Boolean(shownGiven.logged);
+      summary.push(`· required only when shown: ${proven ? 'PROVEN' : 'not proven'} (No without reason: ${hidden.logged ? 'logged' : 'refused'}; Yes without: ${shownMissing.logged ? 'logged' : 'refused'}; Yes with: ${shownGiven.logged ? 'logged' : 'refused'})`);
+    }
+
+    // Read-only: the values Halo's own forms use, then lock the sample field.
+    const seen: Record<string, Record<string, number>> = {};
+    for (const t of (await list('TicketType')).rows.filter(own).slice(0, 25)) {
+      for (const r of ((await detail('TicketType', t.id))?.fields as Row[]) ?? []) {
+        for (const k of ['endusernew', 'technew', 'enduserdetail', 'techdetail', 'enduseraction', 'techaction', ...Object.keys(r).filter((x) => /read|lock|edit/i.test(x))]) {
+          const v = String(r[k]);
+          (seen[k] ??= {})[v] = (seen[k][v] ?? 0) + 1;
+        }
+      }
+    }
+    note(A, 'form row values across 25 ticket types', seen);
+    const cur = await detail('TicketType', tt.id);
+    const rows = ((cur?.fields as Row[]) ?? []).map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'group' && k !== 'fieldinfo')));
+    const lockRow = rows.find((r) => Number(r.fieldid) === lockId);
+    if (apply && lockRow) {
+      const before = pick(lockRow, /new$|detail$|action$|read|lock|edit/i);
+      for (const k of ['endusernew', 'technew', 'enduserdetail', 'techdetail']) lockRow[k] = 2;
+      await runtime().halo.post('/TicketType', [{ id: tt.id, fields: rows }]);
+      const after = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === lockId);
+      note(A, 'locked field row', { before, sent: 2, after: pick(after ?? {}, /new$|detail$|action$|read|lock|edit/i) });
+      summary.push('· read-only: field row set to 2; open a new "zz Enact r31 form" ticket and check "zz Enact r31 locked" can\'t be typed in');
+    }
+
+    // Ticket type description: which setting keeps it.
+    const descKeys = Object.keys(cur ?? {}).filter((k) => /desc|guidance|intro|blurb|portal.*text|text.*portal/i.test(k) && (typeof cur?.[k] === 'string' || cur?.[k] === null));
+    note(A, 'description candidates', pick(cur, new RegExp(`^(${descKeys.join('|') || 'x^'})$`)));
+    if (apply) {
+      const kept: string[] = [];
+      for (const k of descKeys) {
+        const text = `zz Enact r31 description via ${k}`;
+        try { await runtime().halo.post('/TicketType', [{ id: tt.id, [k]: text }]); if ((await detail('TicketType', tt.id))?.[k] === text) kept.push(k); } catch (e) { note(A, `description via ${k} error`, err(e)); }
+      }
+      note(A, 'description settings Halo kept', kept);
+      summary.push(`· ticket type description kept in: ${kept.join(', ') || 'none'}`);
+    }
   });
 
-  // ---------- 2. Which /Lookup list is which: does list 11 name the others? ----------
-  await area('lookup list names', async () => {
-    const A = 'lookup list names';
-    const rows = (await list('Lookup')).rows;
-    const ids = new Set(rows.map((r) => Number(r.lookupid)));
-    const l11 = rows.filter((r) => Number(r.lookupid) === 11);
-    note(A, 'list 11 (id → name, and whether a list with that lookupid exists)', l11.slice(0, 60).map((r) => `${r.id} ${r.name} ${ids.has(Number(r.id)) ? '[list exists]' : ''}`));
-    const fields = (await list('FieldInfo')).rows.filter((f) => Number(f.lookup) > 0).slice(0, 20);
-    note(A, 'fields and their lookup list', fields.map((f) => `${f.label ?? f.name} → ${f.lookup}`));
-  });
-
-  // ---------- 3. Minimal creates still to prove (overwrite-checked) ----------
-  await area('minimal creates', async () => {
-    const A = 'minimal creates';
-    await create(A, 'organisation', 'Client', { name: 'zz Enact r30 organisation' });
-    const kb = (await list('KBArticle')).rows.find((r) => own(r) && Number(r.id) !== 22);
-    const faq = (((kb ? await detail('KBArticle', kb.id) : null)?.faqlists as Row[]) ?? [])[0];
-    if (faq) await create(A, 'article', 'KBArticle', { name: 'zz Enact r30 article', description: '<p>zz Enact r30 article body</p>', faqlists: [{ id: faq.id }] });
-    else note(A, 'article', 'no FAQ list to put it in');
-    await create(A, 'email rule (switched off)', 'EmailRule', { name: 'zz Enact r30 email rule', type: 1, subject: 'ZZENACTR30', enabled: false, seq: 99 });
-  });
-
-  // ---------- 4. Where role permissions live ----------
+  // ---------- 3. Roles: from a name, then the IT Agent's permissions (claims) ----------
   await area('roles', async () => {
     const A = 'roles';
-    const role = (await list('Roles')).rows.find((r) => /^it agent$/i.test(nameOf(r)));
-    if (!role) return;
-    const d = await detail('Roles', role.id);
-    note(A, 'role detail', settings(d));
-    for (const ep of ['RolePermission', 'RolePermissions', 'Permissions', 'RoleAccess', `Roles/${role.id}/Permissions`]) {
-      const r = await list(ep, { role_id: String(role.id) });
-      note(A, `endpoint ${ep}`, r.error ? r.error.slice(0, 120) : { rows: r.rows.length, first: r.rows.slice(0, 2).map((x) => settings(x)) });
+    const roles = (await list('Roles')).rows;
+    const it = roles.find((r) => /^it agent$/i.test(nameOf(r)));
+    const itD = it ? await detail('Roles', it.id) : null;
+    note(A, 'IT Agent claims (first 30)', ((itD?.claims as Row[]) ?? []).slice(0, 30));
+    const admin = roles.find((r) => /administrator/i.test(nameOf(r)));
+    const adD = admin ? await detail('Roles', admin.id) : null;
+    note(A, 'Administrator claims (first 30)', ((adD?.claims as Row[]) ?? []).slice(0, 30));
+    const id = await create(A, 'role', 'Roles', { name: 'zz Enact r31 role' });
+    if (apply && id === null) {
+      // Guids: create() expects numbers. Look the role up by name.
+      const made = (await list('Roles')).rows.find((r) => nameOf(r) === 'zz Enact r31 role');
+      note(A, 'role by name', made ? made.id : null);
+      if (made && itD?.claims) {
+        try {
+          await runtime().halo.post('/Roles', [{ id: made.id, claims: itD.claims }]);
+          const back = await detail('Roles', made.id);
+          note(A, 'claims after copying IT Agent\'s', { sent: (itD.claims as Row[]).length, kept: ((back?.claims as Row[]) ?? []).length });
+          summary.push(`· role permissions: sent ${(itD.claims as Row[]).length} claims, kept ${((back?.claims as Row[]) ?? []).length}`);
+        } catch (e) { note(A, 'claims error', err(e)); }
+      }
     }
-    const agent = (await list('Agent')).rows.find((a) => Number(a.id) > 1);
-    const ad = agent ? await detail('Agent', agent.id) : null;
-    note(A, 'agent role and permission keys', Object.keys(ad ?? {}).filter((k) => /role|perm|access|can|allow/i.test(k)).slice(0, 60));
+  });
+
+  // ---------- 4. Asset types from a name, and where asset fields live ----------
+  await area('assets', async () => {
+    const A = 'assets';
+    const group = (await list('AssetGroup')).rows.find(own);
+    const id = await create(A, 'asset type', 'AssetType', { name: 'zz Enact r31 asset type', assetgroup_id: Number(group?.id ?? 0) });
+    if (id) note(A, 'new asset type fields', ((await detail('AssetType', id))?.fields as Row[]) ?? null);
+    for (const f of [101, 117]) note(A, `FieldInfo ${f}`, pick(await detail('FieldInfo', f), /^(id|name|label|type|usage|custom|lookup)$/));
+    for (const ep of ['AssetField', 'FieldInfo?usage=2', 'Asset/Fields', 'AssetTypeInfo']) {
+      const [res, q] = ep.split('?');
+      const r = await list(res, q ? Object.fromEntries([q.split('=')]) : undefined);
+      note(A, `endpoint ${ep}`, r.error ? r.error.slice(0, 100) : { rows: r.rows.length, first: r.rows.slice(0, 3).map((x) => pick(x, /^(id|name|label|type|usage)$/)) });
+    }
+  });
+
+  // ---------- 5. Email rules: every setting Halo's own rules use ----------
+  await area('email rules', async () => {
+    const A = 'email rules';
+    const rules = (await list('EmailRule')).rows.filter(own);
+    for (const r of rules.slice(0, 8)) note(A, `${r.id} ${nameOf(r)}`, settings(await detail('EmailRule', r.id)));
+    const d = rules[0] ? await detail('EmailRule', rules[0].id) : null;
+    note(A, 'all keys', Object.keys(d ?? {}));
   });
 
   return { out, summary };

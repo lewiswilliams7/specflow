@@ -12,7 +12,7 @@ const OBJECT: Record<PlanStep['object'], string> = {
   team: 'team', field: 'field', sla: 'SLA', approval_process: 'approval process', ticket_type: 'ticket type', status: 'status',
   outcome: 'action', workflow: 'workflow', agent: 'agent', approval_group: 'approval group', field_group: 'form section',
   email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child ticket template', category: 'category', notification: 'agent notification',
-  service: 'service', service_category: 'service category', user: 'user', site: 'site', organisation: 'organisation', working_hours: 'working hours', holiday: 'bank holiday', canned_text: 'canned text', lookup_value: 'list value',
+  service: 'service', service_category: 'service category', user: 'user', site: 'site', organisation: 'organisation', working_hours: 'working hours', holiday: 'bank holiday', canned_text: 'canned text', lookup_value: 'list value', kb_article: 'knowledge base article', faq_list: 'FAQ list',
 };
 
 /** "CFhardware" → "Hardware" (its label on this instance), falling back to the name. */
@@ -126,6 +126,9 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
         break;
       case 'holiday':
         out.push(`Bank holiday on ${step.date} for ${ref(step.working_hours)}`);
+        break;
+      case 'kb_article':
+        out.push(`New article in ${ref(step.faq_list)}: "${String(step.body ?? '').slice(0, 80)}${String(step.body ?? '').length > 80 ? '…' : ''}"`);
         break;
       case 'canned_text':
         out.push(`New canned text: "${String(step.text ?? '').slice(0, 80)}${String(step.text ?? '').length > 80 ? '…' : ''}"`);

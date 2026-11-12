@@ -263,6 +263,9 @@ export const SPIKE_MAP = {
   cannedText: { create: 'name' as string | null }, // round 30: canned text 31 { name, text, html } built by the builder, read back
   /** Lookup values (LK1): adding one is proven (round 29), but which list is which (list names) isn't yet. */
   lookupList: { names: 'lookupid 11' as string | null }, // round 30: list 11's row ids are the other lists' lookupids (12 Impact Level, 13 Risk Of Failure Level, 27 Urgency Level ...)
+  /** Knowledge base (round 30: article 47 from { name, description, faqlists: [{ id }] } kept). Halo refuses an article
+   *  without an FAQ list ("You must select an FAQ list", round 28). On once round 31 builds one with the builder. */
+  kb: { faqLists: 'faqlists' as string | null, builder: null as string | null },
   /** Retire a ticket type (T8, round 29: visible false on type 56, gone from the lists). */
   retire: { key: 'visible' as string | null },
   /** Remove a field from a form (round 28: rows sent without field 312 → gone from type 56). */
@@ -395,6 +398,12 @@ export const FEATURES: Feature[] = [
     prompt: `- canned_text: create { name, text }: a saved reply agents insert into a ticket. text in plain words, line breaks as \n.`,
   },
   {
+    key: 'kb_articles',
+    name: 'knowledge base articles',
+    sections: ['kb'],
+    prompt: `- kb_article: create { name (the article title), body (the article in plain words, paragraphs separated by \n\n), faq_list: ref of a REUSED faq_list step (exact name from inventory.faq_lists) }. Write only what the brief or an attached document says; never invent steps or facts. Reuse an article already in inventory.kb_articles.`,
+  },
+  {
     key: 'lookup_values',
     name: 'values in Halo\'s own lists (closure codes, asset statuses, risk levels)',
     sections: ['lookupList', 'builderProof'],
@@ -485,6 +494,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'working_hours' || step.object === 'holiday') keys.add('working_hours');
   if (step.object === 'canned_text') keys.add('canned_text');
   if (step.object === 'lookup_value') keys.add('lookup_values');
+  if (step.object === 'kb_article' || step.object === 'faq_list') keys.add('kb_articles');
   if (step.set?.retire) keys.add('retire');
   if (step.set?.remove_fields?.length) keys.add('remove_fields');
   if (step.set?.show_field_when?.length) keys.add('visibility');
@@ -846,7 +856,7 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification' | 'service' | 'service_category' | 'user' | 'site' | 'organisation' | 'working_hours' | 'holiday' | 'canned_text' | 'lookup_value';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification' | 'service' | 'service_category' | 'user' | 'site' | 'organisation' | 'working_hours' | 'holiday' | 'canned_text' | 'lookup_value' | 'kb_article' | 'faq_list';
   action: 'create' | 'reuse' | 'update';
   name?: string;
   /** email_template: the workspace's branding (rule EM1). Added by the app or the run, never by the planner. */
@@ -870,6 +880,8 @@ export interface PlanStep {
   days?: string[];
   date?: string;
   working_hours?: string;
+  /** kb_article: its faq_list ref (the article text is body). */
+  faq_list?: string;
   /** canned_text: the reply text. lookup_value: the list's lookupid. */
   text?: string;
   list?: number;
@@ -1774,6 +1786,32 @@ export const translators: Record<PlanStep['object'], Translator> = {
     verifyCreate: (back, step) => (String(back.text ?? '').replace(/\r\n/g, '\n').trim() === String(step.text ?? '').trim() ? [] : ['text not kept as sent']),
   },
 
+  faq_list: {
+    resource: 'FAQLists',
+    template: '',
+    reuseOnly: true,
+    build: (_step, _refs, warn) => { warn('FAQ lists can only be reused for now'); return {}; },
+  },
+
+  kb_article: {
+    // Round 30: article 47 { name, description, faqlists: [{ id }] } kept exactly (SPIKE_MAP.kb).
+    resource: 'KBArticle',
+    template: '',
+    build: (step, refs, warn) => {
+      const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const html = String(step.body ?? '').split(/\n{2,}/).map((para) => `<p>${esc(para).replace(/\n/g, '<br>')}</p>`).join('');
+      if (!String(step.body ?? '').trim()) warn('kb_article: no body');
+      const p: Row = { name: step.name, description: html };
+      if (!step.faq_list) warn('kb_article: no faq_list (Halo refuses an article without one)');
+      set(p, SPIKE_MAP.kb.faqLists, [{ id: refs[step.faq_list ?? '']?.id }], 'article FAQ list', warn);
+      return p;
+    },
+    verifyCreate: (back, step) => {
+      const lists = ((back.faqlists as Row[]) ?? []).map((f) => Number(f.id));
+      return step.faq_list && !lists.length ? ['the article has no FAQ list after saving'] : [];
+    },
+  },
+
   lookup_value: {
     // Rule LK1 (round 29): POST /Lookup { lookupid, name, sequence }. Behind SPIKE_MAP.lookupList until lists have names.
     resource: 'Lookup',
@@ -2204,6 +2242,7 @@ export function refsOf(step: PlanStep): string[] {
     step.site,
     step.organisation,
     step.working_hours,
+    step.faq_list,
     ...(step.set?.remove_fields ?? []),
   ].filter((r): r is string => Boolean(r));
 }
