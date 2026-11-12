@@ -70,7 +70,7 @@ export const DESIGN_RULES = `Build these request forms in Halo. Each form is its
 - Anything marked NOT BUILT: don't build it, list it. Show rules may depend on a single or a multiple selection answer.
 - Fields with the same label, type and options on several forms are one field, reused. Same label with different options: separate fields.
 - Reuse an existing field only when its type matches; never rename or change a field, section or ticket type you reuse.
-- "Portal category" is where the form appears in the self-service portal, NOT a ticket category: don't create ticket categories or rules for it; list it.
+- "Portal category" is where the form appears in the self-service portal, NOT a ticket category: don't create ticket categories or rules for it. If a service category with that exact name exists, add a service for the form there (its summary is the form's description, word for word, and it logs the form's ticket type); otherwise list it.
 - Workflow and team: reuse the existing workflow or team the design names, if one with that name exists. If the design describes stages instead of naming a workflow, or names one that doesn't exist, don't create or change workflows: list it. Approvals: don't build them unless asked below; list them.
 - Don't change any other ticket type, field or form section.`;
 
@@ -92,7 +92,7 @@ export function designSheetBrief(sheets: { sheet: string; data: Row[] }[]): { br
         const meta = [
           `Ticket type: "${name}".`,
           get(r, 'category') && `Portal category: ${get(r, 'category')}.`,
-          get(r, 'description') && `Description (for reference, not a field): ${get(r, 'description')}`,
+          get(r, 'description') && `Description (the portal text for its service, not a field): ${get(r, 'description')}`,
           get(r, 'workflow') && `Workflow in the design: ${get(r, 'workflow')}`,
           get(r, 'approval') && `Approval in the design: ${get(r, 'approval')}`,
           get(r, 'team') && `Team in the design: ${get(r, 'team')}`,

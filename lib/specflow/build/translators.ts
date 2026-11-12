@@ -276,7 +276,7 @@ export const SPIKE_MAP = {
   /** Asset types (round 31): AssetType { name, assetgroup_id } made type 160, kept; fields come from /AssetTypeInfo
    *  (round 32 tests adding them). */
   assetType: { group: 'assetgroup_id' as string | null, builder: 'built' as string | null },
-  assetFields: { rows: 'fields' as string | null, builder: null as string | null }, // round 32: type 161 built + re-run reused; fields rows { field_id, field_name, sequence, type, tab_id, techdetail, userdetail } sent to type 160 were kept (catalogue: /AssetTypeInfo). fields: on after round 33's builder proof
+  assetFields: { rows: 'fields' as string | null, builder: 'built' as string | null }, // round 33: type 162 built with Name, Serial Number, Model, Date Purchased in order; re-run reused it // round 32: type 161 built + re-run reused; fields rows { field_id, field_name, sequence, type, tab_id, techdetail, userdetail } sent to type 160 were kept (catalogue: /AssetTypeInfo). fields: on after round 33's builder proof
   /** Retire a ticket type (T8, round 29: visible false on type 56, gone from the lists). */
   retire: { key: 'visible' as string | null },
   /** Remove a field from a form (round 28: rows sent without field 312 → gone from type 56). */
@@ -379,7 +379,7 @@ export const FEATURES: Feature[] = [
     key: 'services',
     name: 'services in the service catalogue',
     sections: ['service', 'builderProof'],
-    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (one line shown on the portal), service_category: ref of a REUSED service_category step (inventory.service_categories), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { summary?, ticket_type?, service_category?, show_on_portal? }. service_category: REUSE ONLY, by exact name; a category that doesn't exist goes in unsupported. Check inventory.services first and update the one that exists.`,
+    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a REUSED service_category step (inventory.service_categories), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { summary?, ticket_type?, service_category?, show_on_portal? }. service_category: REUSE ONLY, by exact name; a category that doesn't exist goes in unsupported. Check inventory.services first and update the one that exists.`,
   },
   {
     key: 'imports',
