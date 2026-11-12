@@ -252,6 +252,15 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
       errors.push(`step "${s.id}": "${actionName}" doesn't close tickets, so it can't send "${tplName}". Use the action that closes or resolves the ticket on this workflow, or a new one`);
   }
 
+  // 12 Nov (Compleat HR plan): five HR request forms were all copied from "Task". A request type copied from a task,
+  // project, problem or incident type inherits its use, workflow and portal settings. Base it on a service request
+  // type, or leave based_on out so Enact picks one (rule D3).
+  for (const s of steps) {
+    if (s.object !== 'ticket_type' || s.action !== 'create' || !s.based_on) continue;
+    if (/^\s*(task|project|problem|incident|major incident|negative feedback)s?\s*$/i.test(s.based_on))
+      errors.push(`step "${s.id}": "${s.name}" is copied from "${s.based_on}", which isn't a request type. Base it on a service request type from the inventory, or leave based_on out`);
+  }
+
   // Round 30 objects: every ref points at the right kind of step; nothing invented.
   const kindOf = (ref?: string) => steps.find((x) => x.id === ref)?.object;
   const needKind = (s: PlanStep, ref: string | undefined, kind: string, what: string, required = true) => {
