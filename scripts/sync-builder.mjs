@@ -18,6 +18,7 @@ const FILES = [
   ['build.ts', 'lib/specflow/build/build.ts'],
   ['plan-checks.ts', 'lib/specflow/plan-checks.ts'],
   ['email-brand.ts', 'lib/specflow/build/email-brand.ts'],
+  ['learn-areas.ts', 'lib/specflow/build/learn-areas.ts'],
 ];
 const toApp = (src, dest) =>
   src

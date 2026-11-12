@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { IconChat, IconCheck, IconServer } from '@/components/icons';
+import { LearnPanel } from '@/components/LearnPanel';
+import { isAdmin, isTrial } from '@/lib/admin';
 import { getContext } from '@/lib/workspace';
 
 // Run next to Halo UK instances and the Supabase project (London).
@@ -9,11 +11,12 @@ export const maxDuration = 60;
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 export default async function Overview() {
-  const { supabase, workspace, limits } = await getContext();
+  const { supabase, user, workspace, limits } = await getContext();
   const [{ data: instances }, { data: recent }] = await Promise.all([
     supabase.from('instances').select('id, name, base_url, status, inventory_at').eq('workspace_id', workspace.id).order('created_at'),
     supabase.from('threads').select('id, title, updated_at, instances(name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }).limit(8),
   ]);
+  const trial = instances?.find((i) => isTrial(i.base_url)) ?? null;
   const full = limits.instances !== null && (instances?.length ?? 0) >= limits.instances;
   const ready = instances?.find((i) => i.status === 'connected' && i.inventory_at) ?? null;
   const first = instances?.[0] ?? null;
@@ -114,6 +117,7 @@ export default async function Overview() {
           </div>
         )}
       </section>
+      {isAdmin(user.email) ? <LearnPanel trial={trial ? { id: trial.id, name: trial.name } : null} /> : null}
     </div>
   );
 }
