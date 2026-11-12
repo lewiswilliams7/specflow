@@ -484,6 +484,8 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
         return fresh;
       }
       plan = revising && !Array.isArray(parsed.steps) ? applyPatch(ctx.previous!, parsed) : parsed;
+      // A revision is never a fresh plan, even when the plan it revises was (M12).
+      if (revising && plan) delete plan.fresh;
     } catch {
       errors = ['The planner reply was not valid JSON.'];
       continue;
