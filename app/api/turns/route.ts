@@ -5,7 +5,8 @@
  * Stopping (the client aborts the request) cancels the model call and saves nothing. Never writes to Halo.
  */
 import type { Plan } from '@/lib/specflow/plan-types';
-import { generatePlan, type Inventory, type Stage } from '@/lib/specflow/planner';
+import { partIsSealed } from '@/lib/specflow/part-seal';
+import { generatePlan, mergeAndCheck, type Inventory, type Stage } from '@/lib/specflow/planner';
 import { supabaseServer } from '@/lib/supabase/server';
 import { getContext } from '@/lib/workspace';
 
@@ -13,7 +14,9 @@ export const preferredRegion = 'lhr1';
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
-type Body = { message?: string; instance_id?: string; thread_id?: string; edit_of?: string };
+type Part = { title: string; plan: Plan | null; errors: string[]; model?: string; seal: string };
+/** parts: a long brief's forms, each already planned by /api/plan-part (rule M14): merged and checked here. */
+type Body = { message?: string; instance_id?: string; thread_id?: string; edit_of?: string; parts?: Part[] };
 type Turn = { id: string; message: string | null; request: string; plan: Plan | null; errors: string[] | null };
 
 /** What the planner did on a turn, as a short note for the conversation history. */
@@ -58,6 +61,10 @@ export async function POST(req: Request) {
   const { data: inst } = await supabase.from('instances').select('id, inventory').eq('id', instanceId).eq('workspace_id', workspace.id).single();
   if (!inst) return json(404, 'That instance isn’t in your workspace.');
   if (!inst.inventory) return json(400, 'Read the instance first, so the plan knows what already exists.');
+  const parts = Array.isArray(body.parts) ? body.parts : null;
+  if (parts && (!parts.length || parts.some((p) => !partIsSealed(inst.id, String(p.title), p.plan ?? null, p.seal)))) {
+    return json(400, 'Part of that plan didn’t come from the planner. Send the message again.');
+  }
 
   if (limits.plansPerMonth !== null) {
     const since = new Date();
@@ -117,12 +124,21 @@ export async function POST(req: Request) {
       };
       const started = Date.now();
       try {
-        const result = await generatePlan(
-          inst.inventory as Inventory,
-          message,
-          { requester: { email: user.email ?? '' }, history, previous, askedBefore },
-          { signal: stop.signal, cacheKey: `specflow-${inst.id}`, onStage: (stage: Stage, detail?: string) => send({ type: 'stage', stage, detail }) },
-        );
+        let result;
+        if (parts) {
+          // M14: a brief marked into forms is always a new request; its forms were planned one per request.
+          send({ type: 'stage', stage: 'checking', detail: `merging ${parts.length} parts` });
+          result = mergeAndCheck(inst.inventory as Inventory, message, parts.map((p) => ({ title: String(p.title), plan: p.plan, errors: p.errors ?? [] })), { requester: { email: user.email ?? '' } });
+          result.model = parts.find((p) => p.model)?.model ?? '';
+          if (result.plan && earlier.some((t) => t.plan)) result.plan.fresh = true;
+        } else {
+          result = await generatePlan(
+            inst.inventory as Inventory,
+            message,
+            { requester: { email: user.email ?? '' }, history, previous, askedBefore },
+            { signal: stop.signal, cacheKey: `specflow-${inst.id}`, onStage: (stage: Stage, detail?: string) => send({ type: 'stage', stage, detail }) },
+          );
+        }
         if (stop.signal.aborted) return;
         if (builtBefore && result.plan) result.plan.fresh = true;
 

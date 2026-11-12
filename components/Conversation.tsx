@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconArrowUp, IconCheck, IconCopy, IconPencil, IconStop } from '@/components/icons';
 import { Choices } from '@/components/Choices';
+import { splitForms } from '@/lib/specflow/forms';
 import { ATTACH_TYPES, type Attached, readAttachment, withAttachments } from '@/lib/attachments';
 import { Mark } from '@/components/SiteChrome';
 
@@ -135,10 +136,33 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
         }
       };
       try {
+        // M14: a brief marked into forms is planned one form per request, in parallel, so none runs into the time limit.
+        const split = splitForms(text);
+        let parts: unknown[] | undefined;
+        if (split) {
+          let planned = 0;
+          const n = split.forms.length;
+          setPending((p) => (p ? { ...p, stage: 'planning', detail: `${n} parts, all at once` } : p));
+          parts = await Promise.all(
+            split.forms.map(async (_, index) => {
+              const r = await fetch('/api/plan-part', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ message: text, instance_id: instanceId, index }),
+                signal: ctrl.signal,
+              });
+              const body = (await r.json().catch(() => ({}))) as { error?: string };
+              if (!r.ok) throw new Error(body.error ?? `Planning part ${index + 1} failed (${r.status}). Try again.`);
+              planned++;
+              setPending((p) => (p ? { ...p, stage: 'planning', detail: `${planned} of ${n} parts planned` } : p));
+              return body;
+            }),
+          );
+        }
         const res = await fetch('/api/turns', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ message: text, instance_id: instanceId, thread_id: threadId, edit_of: editOf }),
+          body: JSON.stringify({ message: text, instance_id: instanceId, thread_id: threadId, edit_of: editOf, parts }),
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {

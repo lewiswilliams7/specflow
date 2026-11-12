@@ -23,15 +23,13 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
     .eq('workspace_id', workspace.id)
     .single();
   if (!thread) notFound();
-  const { data: rows } = await supabase
-    .from('plans')
-    .select('id, message, request, plan, errors')
-    .eq('thread_id', id)
-    .is('superseded_at', null)
-    .order('created_at');
+  // The turns and the builds don't depend on each other: fetch them together.
+  const [{ data: rows }, { data: builds }] = await Promise.all([
+    supabase.from('plans').select('id, message, request, plan, errors').eq('thread_id', id).is('superseded_at', null).order('created_at'),
+    // Last apply per plan version, for "Last built …" under the plan.
+    supabase.from('builds').select('id, plan_id, status, summary, started_at').eq('thread_id', id).eq('mode', 'apply').order('started_at', { ascending: false }),
+  ]);
   const inst = thread.instances as unknown as ({ name: string; base_url: string; inventory: Inv; inventory_at: string | null } & BrandColumns) | null;
-  // Last apply per plan version, for "Last built …" under the plan.
-  const { data: builds } = await supabase.from('builds').select('id, plan_id, status, summary, started_at').eq('thread_id', id).eq('mode', 'apply').order('started_at', { ascending: false });
   const lastApply = new Map<string, LastBuild>();
   for (const b of builds ?? []) if (b.plan_id && !lastApply.has(b.plan_id)) lastApply.set(b.plan_id, { id: b.id, status: b.status, summary: b.summary, started_at: b.started_at });
   const inventory = inst?.inventory ?? null;

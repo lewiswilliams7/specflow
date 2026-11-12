@@ -7,6 +7,7 @@ import onboarding from './examples/onboarding.json';
 import tier1Test2 from './examples/tier1-test-2.json';
 import workflowTest from './examples/workflow-test.json';
 import type { readInventory } from './inventory';
+import { formRequest, splitForms } from './forms';
 import { complete, parseJsonReply } from './llm';
 import { mandatoryEverywhere, planChecks } from './plan-checks';
 import { type Plan, type PlanStep, notReadyFeatureNames, readyFeaturePrompt, refsOf } from './plan-types';
@@ -313,20 +314,7 @@ function dropRepeatedQuestions(plan: Plan) {
 }
 
 export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
-export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string };
-
-/**
- * M14: a long brief marked into forms ("=== FORM: Name ===" lines) is planned one form at a time, in parallel, then
- * merged. One planner reply for many forms dropped some silently (11 Nov: 4 of 7 forms) and risked the time limit.
- */
-export function splitForms(request: string): { preamble: string; forms: { title: string; text: string }[] } | null {
-  const marks = [...request.matchAll(/^={3,}\s*FORM:\s*(.+?)\s*=*\s*$/gim)];
-  if (marks.length < 2) return null;
-  return {
-    preamble: request.slice(0, marks[0].index).trim(),
-    forms: marks.map((m, i) => ({ title: m[1].trim(), text: request.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index : undefined).trim() })),
-  };
-}
+export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high' };
 
 // Plan text that is never a step id, even when it happens to match one (a label, an option, a stage name...).
 const TEXT_KEYS = new Set(['name', 'label', 'hint', 'subject', 'body', 'summary', 'equals', 'copy_of', 'based_on', 'after_step', 'to_step', 'step', 'description', 'options', 'add_options', 'list', 'type', 'object', 'action', 'by', 'event', 'sla_action', 'resolve_days', 'targets']);
@@ -356,7 +344,15 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
       const s = renameRefs({ ...raw }, ids);
       s.id = ids.get(raw.id)!;
       const key = keyOf(s);
-      if (key && seen.has(key)) { alias.set(s.id, seen.get(key)!); continue; }
+      if (key && seen.has(key)) {
+        // A ticket type split across parts (one long form): one ticket type with every part's fields, in order.
+        if (s.object === 'ticket_type' && s.action === 'create' && s.fields?.length) {
+          const kept = steps.find((x) => x.id === seen.get(key));
+          if (kept) kept.fields = [...(kept.fields ?? []), ...s.fields];
+        }
+        alias.set(s.id, seen.get(key)!);
+        continue;
+      }
       if (key) seen.set(key, s.id);
       if (s.object === 'field' && s.action === 'create' && s.name) {
         const n = s.name.toLowerCase();
@@ -366,7 +362,12 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
       steps.push(s);
     }
   });
-  const merged = steps.map((s) => renameRefs(s, alias));
+  const merged = steps.map((s) => renameRefs(s, alias)).map((s) => {
+    // A field merged into one already on the form appears once.
+    if (!s.fields?.length) return s;
+    const at = new Set<string>();
+    return { ...s, fields: s.fields.filter((f) => (at.has(f.ref) ? false : (at.add(f.ref), true))) };
+  });
   const tag = (title: string, xs: string[] = []) => xs.map((x) => (x.toLowerCase().includes(title.toLowerCase()) ? x : `${title}: ${x}`));
   return {
     request,
@@ -380,14 +381,23 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
   };
 }
 
-async function planInParts(inventory: Inventory, request: string, split: NonNullable<ReturnType<typeof splitForms>>, ctx: PlanContext, opts: GenerateOptions): Promise<PlanResult> {
+/** M14: merge forms planned separately (in their own requests) and check the result like any plan. */
+export function mergeAndCheck(inventory: Inventory, request: string, parts: { title: string; plan: Plan | null; errors: string[] }[], ctx: PlanContext = {}): PlanResult {
+  const ok = parts.filter((r) => r.plan) as { title: string; plan: Plan }[];
+  const plan = mergePlans(ok, request);
+  const { validate } = makePlanner(inventory, request, ctx);
+  const errors = [...parts.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this part (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`), ...validate(plan)];
+  dropRepeatedQuestions(plan);
+  return { plan, errors, model: '' };
+}
+
+async function planInParts(inventory: Inventory, request: string, split: import('./forms').FormSplit, ctx: PlanContext, opts: GenerateOptions): Promise<PlanResult> {
   const n = split.forms.length;
   let done = 0;
   opts.onStage?.('planning', `${n} forms, one at a time`);
   const results = await Promise.all(
     split.forms.map(async (f, i) => {
-      const text = `${split.preamble}\n\nThis is part ${i + 1} of ${n} of a larger request. Plan ONLY the form "${f.title}" below; the other forms are planned separately and merged afterwards. Create every field this form needs, even if another form needs the same one: identical fields (same label, type and options) are merged automatically.\n\n=== FORM: ${f.title} ===\n${f.text}`;
-      const r = await generatePlan(inventory, text, { requester: ctx.requester }, { signal: opts.signal, cacheKey: opts.cacheKey });
+      const r = await generatePlan(inventory, formRequest(split, i), { requester: ctx.requester }, { signal: opts.signal, cacheKey: opts.cacheKey, effort: 'low' });
       opts.onStage?.('planning', `${++done} of ${n} forms planned`);
       return { title: f.title, ...r };
     }),
@@ -410,7 +420,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
   if (split) return planInParts(inventory, request, split, ctx, opts);
   const { SYSTEM, userMsg, validate } = makePlanner(inventory, request, ctx);
   const revising = Boolean(ctx.previous);
-  const effort = revising ? ((process.env.PLANNER_REVISE_EFFORT as 'low' | undefined) ?? 'low') : undefined;
+  const effort = opts.effort ?? (revising ? ((process.env.PLANNER_REVISE_EFFORT as 'low' | undefined) ?? 'low') : undefined);
   let plan: Plan | null = null;
   let errors: string[] = [];
   let model = '';
