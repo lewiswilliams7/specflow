@@ -451,10 +451,50 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
   };
 }
 
+/**
+ * A brief written field by field ("- Label: type, mandatory | conditional | optional") says exactly which fields are
+ * required: mandatory and conditional (required when shown, V3) are required, optional isn't. Set that in code on every
+ * ticket type the brief names, so the planner's guess never wins (12 Nov Compleat plan: conditional fields such as
+ * "Hiring Manager decision" came out optional, and others flipped between parts).
+ */
+export function applyWrittenRequirement(plan: Plan, request: string, inventory: Inventory) {
+  const split = splitForms(request, 1);
+  if (!split) return;
+  const byType = new Map<string, Map<string, boolean>>();
+  for (const f of split.forms) {
+    const tt = f.text.match(/Ticket type:\s*"([^"]+)"/)?.[1]?.trim().toLowerCase();
+    if (!tt) continue;
+    const m = byType.get(tt) ?? new Map<string, boolean>();
+    for (const line of f.text.split('\n')) {
+      const hit = line.match(/^-\s+(.+?):\s+[^,]+?,\s+(mandatory|conditional|optional)\b/i);
+      if (hit) m.set(hit[1].trim().toLowerCase(), hit[2].toLowerCase() !== 'optional');
+    }
+    byType.set(tt, m);
+  }
+  const cf = (inventory as unknown as { details?: { custom_fields?: Record<string, string> } }).details?.custom_fields ?? {};
+  const labelOf = (ref: string) => {
+    const st = plan.steps.find((x) => x.id === ref);
+    if (!st) return '';
+    if (st.action === 'create') return String(st.label ?? '').trim().toLowerCase();
+    return String(cf[st.match?.name ?? '']?.match(/^"([^"]*)"/)?.[1] ?? '').trim().toLowerCase();
+  };
+  for (const st of plan.steps as PlanStep[]) {
+    if (st.object !== 'ticket_type') continue;
+    const want = byType.get(String(st.name ?? st.match?.name ?? '').trim().toLowerCase());
+    if (!want) continue;
+    for (const f of st.fields ?? []) { const w = want.get(labelOf(f.ref)); if (w !== undefined) f.mandatory = w; }
+    for (const f of st.set?.add_fields ?? []) { const w = want.get(labelOf(f.ref)); if (w !== undefined) f.mandatory = w; }
+    if (st.set?.field_mandatory) {
+      for (const f of st.set.field_mandatory) { const w = want.get(labelOf(f.ref)); if (w !== undefined) f.mandatory = w; }
+    }
+  }
+}
+
 /** M14: merge forms planned separately (in their own requests) and check the result like any plan. */
 export function mergeAndCheck(inventory: Inventory, request: string, parts: { title: string; plan: Plan | null; errors: string[] }[], ctx: PlanContext = {}): PlanResult {
   const ok = parts.filter((r) => r.plan) as { title: string; plan: Plan }[];
   const plan = mergePlans(ok, request);
+  applyWrittenRequirement(plan, request, inventory);
   const { validate } = makePlanner(inventory, request, ctx);
   // Up to 4 questions per part: a merged plan carries every part's.
   const errors = [

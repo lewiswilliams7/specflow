@@ -261,6 +261,16 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
       errors.push(`step "${s.id}": "${s.name}" is copied from "${s.based_on}", which isn't a request type. Base it on a service request type from the inventory, or leave based_on out`);
   }
 
+  // 12 Nov Compleat plan: three new forms had no workflow (they'd keep whatever the copied type has), and an update
+  // step on a workflow that changed nothing. Every new ticket type gets a workflow chosen on purpose; an update says what changes.
+  for (const s of steps) {
+    if (s.action === 'update' && (!s.set || !Object.keys(s.set).length)) errors.push(`step "${s.id}": an update with nothing to change; use a reuse step`);
+    if (s.object !== 'ticket_type' || s.action !== 'create') continue;
+    const key = String(s.name ?? '').toLowerCase();
+    if (!steps.some((x) => x.object === 'ticket_type' && x.action === 'update' && String(x.match?.name ?? '').toLowerCase() === key && x.set?.workflow))
+      errors.push(`step "${s.id}": the new ticket type "${s.name}" has no workflow: add an update step that sets the workflow that fits it (reuse an existing one by name)`);
+  }
+
   // A ticket type with an approval process on a workflow "without approval" (or the reverse) never gets approved.
   const ttApproval = new Map<string, boolean>();
   const ttWorkflow = new Map<string, string>();
