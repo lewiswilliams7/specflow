@@ -122,7 +122,7 @@ ${readyFeaturePrompt()}
   - Line-manager approval only works if the instance syncs managers from Active Directory / Entra (rule P6: Halo users' managers can't be set by hand). If you use {"line_manager": true}, ask in questions whether they sync managers from AD, and say the fallback (a named approver or group) in assumptions.
   - Fields: a requirement already met by a field on the form or in a section (standard Halo fields like symptom, risk or fbackoutplan count) is met: reuse that field and use field_mandatory to make it required. Never add a second field with the same meaning.
   - Choosing what to copy (12 Nov): pick by what the request IS. Something broken or not working = an incident; asking for something (access, equipment, a change to HR records, information) = a service request; a planned change to systems = a change. Copy a new ticket type (based_on) from an existing type of that kind (inventory.details.ticket_types[].kind), the closest in purpose; never from a task, project or problem type. If the instance has none of that kind, leave based_on out and say so in assumptions.
-  - Choosing a workflow: reuse the instance's workflow that fits the kind and the approvals. A service request WITH an approval process gets the service request workflow with approval; one with no approval gets the one without; incidents get the incident workflow; changes the change workflow. Match by name and stages in inventory.workflows_and_their_steps, set it on every new ticket type, and name the choice in assumptions. Copy a workflow only when the request asks for a stage it doesn't have.
+  - Choosing a workflow: reuse the instance's workflow that fits the kind and the approvals. A service request WITH an approval process gets the service request workflow with approval; one with no approval gets the one without; incidents get the incident workflow; changes the change workflow. Match by name and stages in inventory.workflows_and_their_steps, set it on every new ticket type, and name the choice in assumptions. To set an existing workflow: a REUSE step { "object": "workflow", "action": "reuse", "match": { "name": exact name } } and a ticket_type update set: { "workflow": that step's id }. Never an update step on the workflow itself. Copy a workflow only when the request asks for a stage it doesn't have.
   - Ticket types: if an existing type already covers a requested type (e.g. "Change Request" for normal changes), update it; create a new type only for a genuinely separate one.
   - Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
   - SLA targets: use only priority names that appear in inventory.details.sla_targets. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities.
@@ -363,7 +363,9 @@ const pascal = (t: string) => t.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filt
  * Every step after the steps it uses (by id, or by the name of something created in the plan), otherwise in the
  * planner's order. Done in code, so an ordering slip never costs another model call (and never fails the checks).
  */
-export function orderByDependency(steps: PlanStep[]): PlanStep[] {
+export function orderByDependency(input: PlanStep[]): PlanStep[] {
+  // An update that changes nothing is a reuse (12 Nov: "Service Request Workflow (without approval)": change nothing).
+  const steps = input.map((s) => (s.action === 'update' && (!s.set || !Object.keys(s.set).length) ? (({ set: _set, ...rest }) => ({ ...rest, action: 'reuse' as const, match: rest.match ?? { name: String(rest.name ?? '') } }))(s) : s));
   const merged: PlanStep[] = [];
   const placed = new Set<string>();
   const ids = new Set(steps.map((s) => s.id));
@@ -458,19 +460,23 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
  * "Hiring Manager decision" came out optional, and others flipped between parts).
  */
 export function applyWrittenRequirement(plan: Plan, request: string, inventory: Inventory) {
-  const split = splitForms(request, 1);
-  if (!split) return;
+  // One block per form: the "=== FORM ===" parts, or the whole request when it has none.
+  const blocks = splitForms(request, 1)?.forms.map((f) => f.text) ?? [request];
   const byType = new Map<string, Map<string, boolean>>();
-  for (const f of split.forms) {
-    const tt = f.text.match(/Ticket type:\s*"([^"]+)"/)?.[1]?.trim().toLowerCase();
-    if (!tt) continue;
-    const m = byType.get(tt) ?? new Map<string, boolean>();
-    for (const line of f.text.split('\n')) {
-      const hit = line.match(/^-\s+(.+?):\s+[^,]+?,\s+(mandatory|conditional|optional)\b/i);
+  for (const text of blocks) {
+    // 'Ticket type: "X"' (design sheets, M14 briefs) or 'Ticket type "X"' (written briefs). One form per block only:
+    // with several ticket types in one block we can't tell whose field a line is, so nothing is applied.
+    const names = [...text.matchAll(/Ticket type:?\s*"([^"]+)"/gi)].map((m) => m[1].trim().toLowerCase());
+    if (new Set(names).size !== 1) continue;
+    const m = byType.get(names[0]) ?? new Map<string, boolean>();
+    for (const line of text.split('\n')) {
+      // "- Label: type, mandatory|conditional|optional" or "- Label, type, required|optional"
+      const hit = line.match(/^\s*-\s+(.+?)(?::\s+|,\s+)[^,]+?,\s+(mandatory|conditional|required|optional)\b/i);
       if (hit) m.set(hit[1].trim().toLowerCase(), hit[2].toLowerCase() !== 'optional');
     }
-    byType.set(tt, m);
+    if (m.size) byType.set(names[0], m);
   }
+  if (!byType.size) return;
   const cf = (inventory as unknown as { details?: { custom_fields?: Record<string, string> } }).details?.custom_fields ?? {};
   const labelOf = (ref: string) => {
     const st = plan.steps.find((x) => x.id === ref);
@@ -562,6 +568,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
       // A revision is never a fresh plan, even when the plan it revises was (M12).
       if (revising && plan) delete plan.fresh;
       if (plan && Array.isArray(plan.steps)) plan.steps = orderByDependency(plan.steps);
+      if (plan && Array.isArray(plan.steps)) applyWrittenRequirement(plan, request, inventory);
     } catch {
       errors = ['The planner reply was not valid JSON.'];
       continue;

@@ -192,7 +192,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
               // instead of every part paying for it in full.
               // A part already planned for this exact text in this browser (e.g. sending the same brief again after a
               // fix) is reused rather than paid for twice. The merge re-checks it against the current instance.
-              const key = `enact-part:${instanceId}:${inventoryAt ?? ''}:${index}:${hashText(split.forms[index].text + split.preamble)}`;
+              const key = `enact-part:${process.env.NEXT_PUBLIC_BUILD_ID ?? ''}:${instanceId}:${inventoryAt ?? ''}:${index}:${hashText(split.forms[index].text + split.preamble)}`;
               const saved = readSaved(key);
               if (saved) {
                 planned++;
