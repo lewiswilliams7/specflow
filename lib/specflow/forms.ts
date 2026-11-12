@@ -17,5 +17,5 @@ export function splitForms(request: string): FormSplit | null {
 export function formRequest(split: FormSplit, i: number): string {
   const f = split.forms[i];
   const n = split.forms.length;
-  return `${split.preamble}\n\nThis is part ${i + 1} of ${n} of a larger request. Plan ONLY the form "${f.title}" below; the other parts are planned separately and merged afterwards. Create every field this part needs, even if another part needs the same one: identical fields (same label, type and options) and a ticket type of the same name are merged automatically.\n\n=== FORM: ${f.title} ===\n${f.text}`;
+  return `${split.preamble}\n\nThis is part ${i + 1} of ${n} of a larger request. Plan ONLY the form "${f.title}" below; the other parts are planned separately and merged afterwards. Create every field this part needs, even if another part needs the same one: identical fields (same label, type and options) and a ticket type of the same name are merged automatically. Build the whole part: if a choice or question affects one setting (a team, a category), leave out only that setting and build everything else.\n\n=== FORM: ${f.title} ===\n${f.text}`;
 }

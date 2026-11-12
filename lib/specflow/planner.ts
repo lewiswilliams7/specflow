@@ -221,10 +221,12 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       seen.add(s.id);
       if (s.action === 'create' && s.name) createdHere.add(`${s.object}:${s.name.toLowerCase()}`);
     }
-    // Every created object (except ticket types, the end product) must be used by a later step.
+    // Every created object must be used by a later step, except end products: ticket types, ticket rules (they act
+    // on tickets themselves) and notifications.
     const used = new Set((plan.steps as PlanStep[]).flatMap((x) => refsOf(x)));
+    const endProducts = new Set(['ticket_type', 'ticket_rule', 'notification']);
     for (const s of plan.steps as PlanStep[])
-      if (s.action === 'create' && s.object !== 'ticket_type' && !used.has(s.id)) errors.push(`step "${s.id}": "${s.name}" is created but nothing uses it; attach it or drop it (ask in questions instead)`);
+      if (s.action === 'create' && !endProducts.has(s.object) && !used.has(s.id)) errors.push(`step "${s.id}": "${s.name}" is created but nothing uses it; attach it or drop it (ask in questions instead)`);
     errors.push(...planChecks(plan, {
       fieldDetails: inventory.details?.custom_fields as Record<string, string> | undefined,
       userMessages: [...(ctx.history ?? []).filter((h) => h.role === 'user').map((h) => h.text), request],
@@ -362,12 +364,24 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
       steps.push(s);
     }
   });
-  const merged = steps.map((s) => renameRefs(s, alias)).map((s) => {
+  const deduped = steps.map((s) => renameRefs(s, alias)).map((s) => {
     // A field merged into one already on the form appears once.
     if (!s.fields?.length) return s;
     const at = new Set<string>();
     return { ...s, fields: s.fields.filter((f) => (at.has(f.ref) ? false : (at.add(f.ref), true))) };
   });
+  // A ticket type split across parts now uses fields from later parts: put every step after the ones it uses,
+  // keeping the original order otherwise.
+  const merged: PlanStep[] = [];
+  const placed = new Set<string>();
+  const ids = new Set(deduped.map((s) => s.id));
+  const pending = [...deduped];
+  while (pending.length) {
+    const i = pending.findIndex((s) => refsOf(s).every((r) => !ids.has(r) || placed.has(r) || r === s.id));
+    const [next] = pending.splice(i < 0 ? 0 : i, 1); // a cycle can't be ordered: keep it and let the checks say so
+    merged.push(next);
+    placed.add(next.id);
+  }
   const tag = (title: string, xs: string[] = []) => xs.map((x) => (x.toLowerCase().includes(title.toLowerCase()) ? x : `${title}: ${x}`));
   return {
     request,
@@ -386,7 +400,11 @@ export function mergeAndCheck(inventory: Inventory, request: string, parts: { ti
   const ok = parts.filter((r) => r.plan) as { title: string; plan: Plan }[];
   const plan = mergePlans(ok, request);
   const { validate } = makePlanner(inventory, request, ctx);
-  const errors = [...parts.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this part (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`), ...validate(plan)];
+  // Up to 4 questions per part: a merged plan carries every part's.
+  const errors = [
+    ...parts.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this part (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`),
+    ...validate(plan).filter((e) => !(/^\d+ questions: keep at most 4/.test(e) && (plan.questions?.length ?? 0) <= 4 * parts.length)),
+  ];
   dropRepeatedQuestions(plan);
   return { plan, errors, model: '' };
 }
