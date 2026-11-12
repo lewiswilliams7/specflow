@@ -30,6 +30,10 @@
  * Round 33 (12 Nov): an asset type WITH fields through the real builder (twice), and a read-only field added and
  * locked in one builder step.
  *
+ * Round 34 (12 Nov): read-only done right (4 on the new-ticket screens, F13) on field 316, and fields 315/316's detail
+ * screens put back to 1 (round 31 moved them to a separate tab); whether end users can log a ticket type on the portal
+ * (enduserscanselect); which SLA setting picks the working hours.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -40,7 +44,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 33;
+export const ROUND = 34;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -235,27 +239,52 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('builder', async () => {
-    const A = 'builder';
-    const group = (await list('AssetGroup')).rows.find(own);
-    if (group) {
-      const plan = { request: 'Enact learning run 33: an asset type with fields', steps: [
-        { id: 'grp', object: 'asset_group', action: 'reuse', match: { name: nameOf(group) } },
-        { id: 'at', object: 'asset_type', action: 'create', name: 'zz Enact r33 asset type', asset_group: 'grp', asset_fields: ['Name', 'Serial Number', 'Model', 'Date Purchased'] },
-      ] } as unknown as Plan;
-      await prove('asset type with fields', plan);
-      await prove('asset type with fields again: nothing duplicated', plan);
-      const at = (await list('AssetType')).rows.find((r) => nameOf(r) === 'zz Enact r33 asset type');
-      note(A, 'asset type fields read back', at ? (((await detail('AssetType', at.id))?.fields as Row[]) ?? []).map((f) => `${f.sequence} ${f.field_name} (${f.field_id})`) : null);
-    }
-    await prove('read-only field (added and locked in one step)', { request: 'Enact learning run 33: read-only', steps: [
-      { id: 'f', object: 'field', action: 'create', name: 'CFzzEnactR33Locked', label: 'zz Enact r33 locked', type: 'text' },
-      { id: 'form', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r31 form' }, set: { add_fields: [{ ref: 'f' }], read_only: ['f'] } },
-    ] } as unknown as Plan);
+
+  await area('read-only', async () => {
+    const A = 'read-only';
     const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
-    const fid = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR33Locked')?.id);
-    const row = tt ? (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === fid) : null;
-    note(A, 'read-only row', row ? pick(row, /^(endusernew|technew|enduserdetail|techdetail)$/) : null);
+    if (!tt || !apply) return;
+    const fields = (await list('FieldInfo')).rows;
+    const ids = ['CFzzEnactR31Locked', 'CFzzEnactR33Locked'].map((n) => Number(fields.find((f) => f.name === n)?.id));
+    // Put round 31/33's rows back: detail screens 1 (ticket information), new screens 1 (visible, not required).
+    const cur = await detail('TicketType', tt.id);
+    const rows = ((cur?.fields as Row[]) ?? []).map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'group' && k !== 'fieldinfo')));
+    for (const r of rows) if (ids.includes(Number(r.fieldid))) Object.assign(r, { endusernew: 1, technew: 1, enduserdetail: 1, techdetail: 1 });
+    await runtime().halo.post('/TicketType', [{ id: tt.id, fields: rows }]);
+    // Now the builder locks field 316 the right way.
+    await prove('read-only (value 4)', { request: 'Enact learning run 34', steps: [
+      { id: 'f', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR33Locked' } },
+      { id: 'form', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r31 form' }, set: { read_only: ['f'] } },
+    ] } as unknown as Plan);
+    const after = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).filter((r) => ids.includes(Number(r.fieldid))).map((r) => ({ field: r.fieldid, ...pick(r, /^(endusernew|technew|enduserdetail|techdetail)$/) }));
+    note(A, 'rows after', after);
+    summary.push('· read-only: open a NEW "zz Enact r31 form" ticket: "zz Enact r33 locked" should be read only; "zz Enact r31 locked" normal again, both in Ticket information');
+  });
+
+  await area('portal', async () => {
+    const A = 'portal';
+    const types = (await list('TicketType')).rows.filter(own).slice(0, 30);
+    const seen: Record<string, number> = {};
+    for (const t of types) { const d = await detail('TicketType', t.id); seen[String(d?.enduserscanselect)] = (seen[String(d?.enduserscanselect)] ?? 0) + 1; }
+    note(A, 'enduserscanselect across Halo\'s own types', seen);
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
+    if (tt) await update(A, 'portal off then on', 'TicketType', Number(tt.id), { enduserscanselect: false });
+    if (tt) await update(A, 'portal back on', 'TicketType', Number(tt.id), { enduserscanselect: true });
+  });
+
+  await area('sla working hours', async () => {
+    const A = 'sla working hours';
+    const sla = (await list('SLA')).rows.find(own);
+    const d = sla ? await detail('SLA', sla.id) : null;
+    note(A, 'SLA settings that look like working hours', pick(d, /work|day|hour|calendar|holiday/i));
+    if (!apply) return;
+    await prove('SLA for the test', { request: 'Enact learning run 34: SLA', steps: [{ id: 's', object: 'sla', action: 'create', name: 'zz Enact r34 SLA', resolve_days: 2 }] } as unknown as Plan);
+    const z = (await list('SLA')).rows.find((r) => nameOf(r) === 'zz Enact r34 SLA');
+    const hours = (await list('Workday')).rows.find((r) => nameOf(r) === 'zz Enact r30 hours');
+    const zd = z ? await detail('SLA', z.id) : null;
+    const keys = Object.keys(zd ?? {}).filter((k) => /workday/i.test(k) && (typeof zd?.[k] === 'number' || zd?.[k] === null));
+    note(A, 'candidate keys on the zz SLA', pick(zd, new RegExp(`^(${keys.join('|') || 'x^'})$`)));
+    if (z && hours) for (const k of keys) await update(A, `SLA ${k} → zz r30 hours`, 'SLA', Number(z.id), { [k]: Number(hours.id) });
   });
 
   return { out, summary };

@@ -266,9 +266,11 @@ export const SPIKE_MAP = {
   /** Knowledge base (round 30: article 47 from { name, description, faqlists: [{ id }] } kept). Halo refuses an article
    *  without an FAQ list ("You must select an FAQ list", round 28). On once round 31 builds one with the builder. */
   kb: { faqLists: 'faqlists' as string | null, builder: 'built' as string | null }, // round 31: article 48 built, re-run reused it
-  /** Read-only on a form (round 31): the row's endusernew, technew, enduserdetail, techdetail set to 2 were kept (type 58,
-   *  field 315); Halo's own forms use techdetail 2. On once Lewis sees the field locked in Halo's screens. */
-  readOnly: { value: 2 as number | null, keys: ['endusernew', 'technew', 'enduserdetail', 'techdetail'] as string[] | null, seenInHalo: null as string | null },
+  /** Read-only on a form: value 4 on the new-ticket screens (rule F13). On once Lewis sees a field locked in Halo. */
+  // Round 33 + Lewis in Halo's screen (12 Nov): on the NEW ticket screens (endusernew, technew) the values are 0 Not visible,
+  // 1 Visible not required, 2 Warn if empty, 3 Required, 4 Read only. 2 was NOT read-only (he could type in it). On the
+  // DETAIL screens (enduserdetail, techdetail) 2 means "show on a separate tab", so those are never touched.
+  readOnly: { value: 4 as number | null, keys: ['endusernew', 'technew'] as string[] | null, seenInHalo: null as string | null },
   /** Roles (round 31): POST /Roles { name } made role 87a07edb… (guid id, numeric id_int 12, no id in the reply); its
    *  claims (72) copied from IT Agent were kept exactly. Permissions are copied whole from an existing role, never
    *  edited one claim at a time (the claim codes aren't documented). On after round 32's builder proof. */
