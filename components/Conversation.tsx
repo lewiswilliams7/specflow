@@ -160,6 +160,10 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
           };
           parts = await Promise.all(
             split.forms.map(async (_, index) => {
+              // Every part starts with the same instructions and instance read. Starting the others a few seconds
+              // after the first lets the model provider reuse that shared start (charged at a tenth of the price)
+              // instead of every part paying for it in full.
+              if (index > 0) await new Promise((r) => setTimeout(r, 8000));
               let body = await ask(index);
               // A part with problems gets one more pass on its own before the parts are merged.
               if (body.plan && body.errors?.length) {

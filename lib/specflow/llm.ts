@@ -33,7 +33,16 @@ export async function complete(system: string, user: string, opts: CompleteOptio
         ],
       }),
     });
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[]; error?: { message?: string } };
+    const json = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+      error?: { message?: string };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number }; completion_tokens_details?: { reasoning_tokens?: number } };
+    };
+    // One line per call in the server logs, so the cost of a plan can be seen (and checked when it seems high).
+    if (json.usage) {
+      const u = json.usage;
+      console.log(JSON.stringify({ planner_usage: { model, effort: opts.effort ?? 'default', input: u.prompt_tokens, cached: u.prompt_tokens_details?.cached_tokens ?? 0, output: u.completion_tokens, reasoning: u.completion_tokens_details?.reasoning_tokens ?? 0 } }));
+    }
     if (!res.ok) throw new Error(`The planner model returned an error (${res.status}): ${json.error?.message ?? 'unknown'}`);
     return { text: json.choices?.[0]?.message?.content ?? '', model };
   }
