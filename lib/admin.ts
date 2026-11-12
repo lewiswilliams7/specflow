@@ -3,7 +3,7 @@
  * (spike CLAUDE.md: never an employer or client instance). Both locks are checked on the server.
  */
 export const ADMIN_EMAILS = ['lewis@alliedesm.com', 'lewis@gethandover.uk'];
-export const TRIAL_HOSTS = ['gethandoveruk.haloitsm.com'];
+export const TRIAL_HOSTS = ['gethandoveruk.haloitsm.com', 'halotrialconcord.trial.usehalo.com'];
 
 export const isAdmin = (email?: string | null) => !!email && ADMIN_EMAILS.includes(email.toLowerCase());
 export const isTrial = (baseUrl: string) => {

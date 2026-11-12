@@ -53,7 +53,7 @@ export function LearnPanel({ trial }: { trial: { id: string; name: string } | nu
             </div>
           </>
         ) : (
-          <p className="muted">Connect your trial (gethandoveruk.haloitsm.com) in this workspace to run it. It&apos;s locked to that instance, so it can never run on a client&apos;s.</p>
+          <p className="muted">No trial instance in this workspace. Trials allowed: gethandoveruk.haloitsm.com, halotrialconcord.trial.usehalo.com. It&apos;s locked to that instance, so it can never run on a client&apos;s.</p>
         )}
         {msg ? <p className="subtle" role="status">{msg}</p> : null}
       </div>
