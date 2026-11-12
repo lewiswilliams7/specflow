@@ -75,6 +75,11 @@ export async function POST(req: Request) {
 
   const stop = new AbortController();
   req.signal.addEventListener('abort', () => stop.abort());
+  // 12 Nov (Compleat, 193 steps): the request hit the 300 s limit mid-build and was killed, leaving the build
+  // "running" with no log. Stop cleanly between steps well before the limit; the page carries on in a new request,
+  // and steps already written are found and skipped (U4).
+  let timeUp = false;
+  const budget = setTimeout(() => { timeUp = true; stop.abort(); }, 240_000);
   const encoder = new TextEncoder();
   const halo = haloClient({ baseUrl: inst.base_url, tenant: inst.tenant ?? '', clientId: inst.client_id, clientSecret: decrypt(inst.secret_ciphertext) });
 
@@ -90,6 +95,13 @@ export async function POST(req: Request) {
       };
       let result: BuildResult | null = null;
       let failure = '';
+      // The log so far is saved as the build goes, so a cut-off build still has its record (build report).
+      const sofar: StepLog[] = [];
+      let lastSave = 0;
+      const saveSoFar = () => {
+        lastSave = Date.now();
+        void supabase.from('builds').update({ log: sofar }).eq('id', build.id).then(() => undefined, () => undefined);
+      };
       try {
         // A read-only sign-in would pass the dry run and then fail on the first write: stop before writing anything.
         if (mode === 'apply' && (await halo.access()) === 'read:all') throw new Error(READ_ONLY_MESSAGE);
@@ -100,6 +112,10 @@ export async function POST(req: Request) {
             emit: (e) => {
               if (e.type === 'line') lines.push(...e.text.split('\n'));
               send(e.type === 'step' ? { type: 'step', index: e.index, total: e.total, entry: { ...e.entry, payload: undefined } } : e);
+              if (e.type === 'step' && mode === 'apply') {
+                sofar.push(e.entry);
+                if (Date.now() - lastSave > 10_000) saveSoFar();
+              }
             },
           }),
         );
@@ -111,6 +127,7 @@ export async function POST(req: Request) {
       const all = [failure, ...(result?.problems ?? []), ...(result?.log ?? []).map((l) => l.error ?? '')].join('\n');
       if (/rejected the saved client ID|stopped accepting the saved client ID/.test(all))
         await supabase.from('instances').update({ status: 'failed', last_error: 'Halo rejected the saved client ID or secret. Update the connection with the current ones.' }).eq('id', inst.id);
+      clearTimeout(budget);
       const status = !result ? 'failed' : result.refused ? 'refused' : result.stopped ? 'stopped' : result.ok ? 'succeeded' : 'failed';
       const summary = result ? summarise(result) : null;
       await supabase
@@ -123,7 +140,8 @@ export async function POST(req: Request) {
         ...(result?.log ?? []).flatMap((l) => [...(l.error ? [{ step: l.step, text: l.error.split('\n')[0] }] : []), ...l.warnings.map((text) => ({ step: l.step, text }))]),
         ...(failure ? [{ step: '', text: failure }] : []),
       ];
-      send({ type: 'done', build_id: build.id, status, summary, problems: issues });
+      // continue: stopped only because this request's time ran out, so the page starts the next part straight away.
+      send({ type: 'done', build_id: build.id, status, summary, problems: issues, continue: status === 'stopped' && timeUp });
       try {
         controller.close();
       } catch {

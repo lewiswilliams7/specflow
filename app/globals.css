@@ -587,3 +587,10 @@ textarea { resize: vertical; min-height: 96px; }
 .build-log .eq { color: #8eacff; }
 .build-log-cap { margin-top: 10px; font-size: 13px; color: var(--ink-3); }
 @media (max-width: 1099px) { .safety-split > div:last-child { margin-top: 28px; } }
+
+/* Build progress (12 Nov): a bar, time elapsed, and how long since Halo last answered */
+.build-meter { display: grid; gap: 6px; margin: 4px 0 10px; }
+.meter { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--brand); border-radius: inherit; transition: width 0.4s ease; }
+.meter > span.meter-wait { width: 30% !important; animation: meter-slide 1.4s ease-in-out infinite; }
+@keyframes meter-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(330%); } }

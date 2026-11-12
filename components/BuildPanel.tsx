@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { scanInstance } from '@/app/app/actions';
 import { IconAlert, IconCheck } from '@/components/icons';
 import { site } from '@/lib/site';
@@ -9,7 +9,7 @@ import { site } from '@/lib/site';
 type Entry = { step: string; object: string; name: string; outcome: string; id?: unknown; warnings: string[]; detail?: string; error?: string };
 type Summary = { created: number; updated: number; would_create: number; would_update: number; reused: number; failed: number; warnings: number; dropdowns_created: number };
 type Issue = { step: string; text: string };
-type Done = { build_id: string; status: 'succeeded' | 'failed' | 'refused' | 'stopped'; summary: Summary | null; problems: Issue[] };
+type Done = { build_id: string; status: 'succeeded' | 'failed' | 'refused' | 'stopped'; summary: Summary | null; problems: Issue[]; continue?: boolean };
 export type LastBuild = { id?: string; status: string; summary: Summary | null; started_at: string } | null;
 
 type Props = {
@@ -60,6 +60,17 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
   const [done, setDone] = useState<Done | null>(null);
   const [error, setError] = useState('');
   const abort = useRef<AbortController | null>(null);
+  // Progress: when this run started, when Halo last answered, and which part of a long build this is.
+  const [startedAt, setStartedAt] = useState(0);
+  const [lastEventAt, setLastEventAt] = useState(0);
+  const [part, setPart] = useState(1);
+  const [now, setNow] = useState(() => Date.now());
+  const paused = useRef(false);
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
   const [refresh, setRefresh] = useState<'' | 'running' | 'done' | string>('');
 
   /** After a build, re-read the instance so the next plan knows what now exists. */
@@ -72,12 +83,16 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
     router.refresh();
   }
 
-  async function run(next: 'preview' | 'apply') {
+  async function run(next: 'preview' | 'apply', continuing = false) {
     setMode(next);
     setRunning(true);
     setEntries([]);
     setDone(null);
     setError('');
+    paused.current = false;
+    if (!continuing) { setStartedAt(Date.now()); setPart(1); } else setPart((n) => n + 1);
+    setLastEventAt(Date.now());
+    let carryOn = false;
     setLine(next === 'apply' ? 'Checking the whole plan first' : 'Reading your instance');
     const ctrl = new AbortController();
     abort.current = ctrl;
@@ -101,26 +116,34 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
           buffer = buffer.slice(nl + 1);
           if (!raw) continue;
           const ev = JSON.parse(raw) as { type: string; text?: string; index?: number; total?: number; entry?: Entry } & Partial<Done>;
+          setLastEventAt(Date.now());
           if (ev.type === 'line' && ev.text?.trim()) setLine(ev.text.trim().split('\n')[0].replace(/[:…]+$/, ''));
           if (ev.type === 'step' && ev.entry) {
             setTotal(ev.total ?? 0);
             setEntries((xs) => [...xs, ev.entry!]);
           }
           if (ev.type === 'done') finalStatus = ev.status ?? '';
-          if (ev.type === 'done') setDone({ build_id: ev.build_id!, status: ev.status!, summary: ev.summary ?? null, problems: ev.problems ?? [] });
+          // A long build stops itself before the server's time limit: start the next part straight away.
+          if (ev.type === 'done' && ev.continue) carryOn = true;
+          else if (ev.type === 'done') setDone({ build_id: ev.build_id!, status: ev.status!, summary: ev.summary ?? null, problems: ev.problems ?? [] });
         }
       }
+      if (!finalStatus) throw new Error(next === 'apply'
+        ? 'The connection to the build was lost. Nothing is lost: every finished step was written and checked. Carry on building to finish the rest.'
+        : 'The connection was lost before the preview finished. Preview again.');
+      if (carryOn) return;
       if (next === 'apply') {
         router.refresh();
         // Something was written (fully or partly): refresh what the app knows about the instance.
         if (finalStatus === 'succeeded' || finalStatus === 'failed' || finalStatus === 'stopped') void reread();
       }
     } catch (e) {
-      if ((e as Error).name === 'AbortError') setError(next === 'apply' ? 'Stopped. Steps already finished were written and checked; build again to finish the rest.' : 'Preview stopped.');
+      if ((e as Error).name === 'AbortError') setError(next === 'apply' ? 'Paused. Every step so far was written and checked. Resume to carry on from here.' : 'Preview stopped.');
       else setError((e as Error).message || 'Something went wrong.');
     } finally {
-      setRunning(false);
       abort.current = null;
+      if (carryOn && !paused.current) void run(next, true);
+      else setRunning(false);
     }
   }
 
@@ -159,13 +182,36 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
     <div className="build">
       <div className="build-head">
         <b>{mode === 'preview' ? `Preview on ${instanceName}` : `Building in ${instanceName}`}</b>
+        {!running && done ? (
+          <span className={`badge ${done.status === 'succeeded' ? 'add' : 'danger'}`}>
+            {done.status === 'succeeded' ? (mode === 'apply' ? 'Finished' : 'Preview finished') : done.status === 'refused' ? 'Not built' : 'Stopped'}
+          </span>
+        ) : null}
         {running ? (
           <span className="build-progress">
             <span className="spinner" aria-hidden="true" />
-            {mode === 'apply' && total ? `Step ${Math.min(entries.length + 1, total)} of ${total}` : line}
+            {total ? `Step ${Math.min(entries.length + 1, total)} of ${total}` : line}
           </span>
         ) : null}
       </div>
+      {running ? (() => {
+        const pct = total ? Math.round((Math.min(entries.length, total) / total) * 100) : 0;
+        const idle = Math.max(0, Math.round((now - lastEventAt) / 1000));
+        const mins = (ms: number) => { const t = Math.round(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+        return (
+          <div className="build-meter">
+            <div className="meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Build progress">
+              <span style={{ width: `${total ? pct : 4}%` }} className={total ? '' : 'meter-wait'} />
+            </div>
+            <span className="subtle">
+              {total ? `${pct}% · ` : ''}{mins(now - startedAt)} elapsed{part > 1 ? ` · part ${part}` : ''}
+              {idle >= 30
+                ? ` · waiting on Halo for ${idle}s${idle >= 90 ? ' (slow, not stuck: long builds pause and carry on by themselves every 4 minutes)' : ''}`
+                : ' · working'}
+            </span>
+          </div>
+        );
+      })() : null}
 
       {mode === 'preview' && !done && !running && !error ? null : (
         <ul className="diff build-steps" aria-live="polite">
@@ -216,7 +262,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
 
       {done && mode === 'apply' ? (
         done.status === 'succeeded' ? (
-          <div className="notice ok">
+          <div className="notice ok" ref={(el) => { if (el && !el.dataset.seen) { el.dataset.seen = '1'; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }}>
             <IconCheck />
             <div>
               <b>Built in {instanceName}: {s?.created ?? 0} created, {s?.updated ?? 0} changed, all checked after saving.</b>
@@ -251,8 +297,8 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
 
       {running ? (
         <div className="build-actions" style={{ justifyContent: 'flex-end' }}>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => abort.current?.abort()}>
-            {mode === 'apply' ? 'Stop after this step' : 'Stop'}
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => { paused.current = true; abort.current?.abort(); }}>
+            {mode === 'apply' ? 'Pause after this step' : 'Stop'}
           </button>
         </div>
       ) : done && mode === 'apply' ? (
@@ -264,7 +310,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
         <div className="build-actions" style={{ justifyContent: 'flex-end' }}>
           <button className="btn btn-quiet btn-sm" type="button" onClick={() => { setMode('idle'); setError(''); }}>Close</button>
           <button className="btn btn-primary btn-sm" type="button" onClick={() => { setError(''); void run(mode); }}>
-            {mode === 'apply' ? 'Carry on building' : 'Preview again'}
+            {mode === 'apply' ? 'Resume building' : 'Preview again'}
           </button>
         </div>
       ) : null}
