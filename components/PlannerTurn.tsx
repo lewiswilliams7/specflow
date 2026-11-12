@@ -42,11 +42,15 @@ export function PlannerTurn({ plan, errors, previous, inventory, latest, planId,
         <p className="subtle">{plan.choices.length === 1 ? 'One choice' : `${plan.choices.length} choices`} to make, just above the message box.</p>
       ) : null}
 
-      {plan?.questions?.length ? (
+      {plan?.questions?.length && !latest ? (
         <div className="questions">
-          <b>{latest ? 'Before you build, can you tell me:' : 'I asked:'}</b>
+          <b>I asked:</b>
           <ol>{plan.questions.map((q) => <li key={q}>{humanise(q, inventory)}</li>)}</ol>
         </div>
+      ) : null}
+
+      {latest && plan?.questions?.length ? (
+        <p className="subtle">{plan.questions.length === 1 ? 'One question' : `${plan.questions.length} questions`} to answer, just above the message box.</p>
       ) : null}
 
       <PlanView plan={plan} errors={errors} inventory={inventory} open={latest} heading={latest ? 'Plan' : 'Earlier version'} planId={planId} canBuild={canBuild} target={target} brand={brand} />

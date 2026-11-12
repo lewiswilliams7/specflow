@@ -62,6 +62,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
         turns={turns}
         placeholder="Reply to refine the plan: answer its questions, or change anything"
         choices={((rows ?? []).at(-1)?.plan as Plan | null)?.choices?.map((c) => ({ question: humanise(c.question, inventory), options: c.options }))}
+        questions={((rows ?? []).at(-1)?.plan as Plan | null)?.questions?.map((q) => humanise(q, inventory))}
       />
     </div>
   );

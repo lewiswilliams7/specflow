@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IconArrowUp, IconCheck, IconCopy, IconPencil, IconStop } from '@/components/icons';
 import { Choices } from '@/components/Choices';
+import { Questions } from '@/components/Questions';
 import { splitForms } from '@/lib/specflow/forms';
 import { ATTACH_TYPES, type Attached, readAttachment, withAttachments } from '@/lib/attachments';
 import { Mark } from '@/components/SiteChrome';
@@ -23,6 +24,8 @@ type Props = {
   after?: ReactNode;
   /** The latest plan's choices (rule M13), shown just above the message box. */
   choices?: { question: string; options: string[] }[];
+  /** The latest plan's questions, each with its own answer box just above the message box. */
+  questions?: string[];
 };
 
 type Pending = { message: string; editOf?: string; stage: string; detail?: string; startedAt: number; awaiting?: string };
@@ -61,7 +64,7 @@ const MAX_MESSAGE = 120000;
 const fmt = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
 
 /** Chat with the planner. Enter sends, Shift+Enter adds a line, Stop cancels, Edit replans from that message. */
-export function Conversation({ instanceId, threadId, turns, placeholder, start, blocked, after, choices }: Props) {
+export function Conversation({ instanceId, threadId, turns, placeholder, start, blocked, after, choices, questions }: Props) {
   const router = useRouter();
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
@@ -244,6 +247,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
   const composer = (
     <div className="composer-dock">
       {choices?.length && !pending ? <Choices key={turns.at(-1)?.id} choices={choices} /> : null}
+      {questions?.length && !pending ? <Questions key={`q-${turns.at(-1)?.id}`} questions={questions} /> : null}
       <form
         className="composer"
         onSubmit={(e) => {

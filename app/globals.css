@@ -541,3 +541,11 @@ textarea { resize: vertical; min-height: 96px; }
 .skeleton-block.short { height: 70px; width: 80%; }
 @keyframes skeleton { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* The planner's questions, each with an answer box, just above the message box */
+.ask { margin: 0 0 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+.ask-head { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 8px 10px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+.ask-body { display: grid; gap: 8px; padding: 0 10px 10px; max-height: 40vh; overflow: auto; }
+.ask-q { display: grid; gap: 4px; }
+.ask-q textarea { width: 100%; resize: vertical; min-height: 32px; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+.ask-foot { display: flex; justify-content: space-between; align-items: center; }
