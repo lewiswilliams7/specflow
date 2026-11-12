@@ -571,3 +571,19 @@ textarea { resize: vertical; min-height: 96px; }
 .steps-inline .mini-step { align-items: flex-start; }
 .mini-step .grow { flex: 1; min-width: 0; }
 @media (max-width: 480px) { .sheet table { font-size: 12px; } .sheet th, .sheet td { padding: 7px 6px; overflow-wrap: normal; hyphens: auto; } }
+
+/* Wider pages (Nov 2026): use the screen on big monitors, keep reading lines comfortable */
+.wrap { max-width: 1360px; }
+@media (min-width: 1200px) { .wrap { padding-inline: 48px; } }
+@media (min-width: 1200px) { .section-head { max-width: 46em; } .hero h1 { max-width: 14em; } .hero .lede { max-width: 36em; } }
+@media (min-width: 1100px) {
+  .faq { max-width: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 48px; align-items: start; }
+  .faq details p { max-width: none; }
+}
+@media (min-width: 1100px) { .safety-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr); gap: 48px; align-items: start; margin-top: 32px; } .safety-split .safety { margin-top: 0; } }
+.build-log { background: var(--code-bg); color: var(--code-ink); border-radius: var(--r-l); padding: 18px 20px; font: 12.5px/1.7 var(--mono); overflow-x: auto; box-shadow: var(--shadow-pop); min-width: 0; }
+.build-log .dim { color: var(--code-dim); }
+.build-log .ok { color: #4cc79a; }
+.build-log .eq { color: #8eacff; }
+.build-log-cap { margin-top: 10px; font-size: 13px; color: var(--ink-3); }
+@media (max-width: 1099px) { .safety-split > div:last-child { margin-top: 28px; } }

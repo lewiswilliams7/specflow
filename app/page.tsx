@@ -262,6 +262,7 @@ export default function Home() {
               <h2>Built for instances people rely on</h2>
               <p>Configuration changes break SLAs and stop tickets moving. {site.name} is designed so you always know what it will do and what it did.</p>
             </div>
+            <div className="safety-split">
             <dl className="safety">
               <div><dt>You see every change first</dt><dd>The preview lists each object it will create, and the before and after of every update. Nothing is written until you approve, and nothing is written at all if the preview finds a problem.</dd></div>
               <div><dt>It never deletes</dt><dd>There is no delete anywhere in {site.name}. There&apos;s no automatic undo either: the report lists every record it created by Halo ID, so removing one is a short job for you, in Halo.</dd></div>
@@ -269,6 +270,13 @@ export default function Home() {
               <div><dt>A report for your change board</dt><dd>Every build is recorded: what was asked, who ran it, when, and every record written with its Halo ID and the before and after of each change. Print it or save it as a PDF.</dd></div>
               <div><dt>It says what it can&apos;t do</dt><dd>Anything outside what it builds goes on a list in plain words, ready for you to set up in Halo, instead of being half-built.</dd></div>
             </dl>
+              <div>
+                <pre className="build-log" aria-label="The builder's own output from a test run">
+<span className="dim">Checking the whole plan first (dry run) …</span>{'\n'}<span className="dim">Dry run clean: applying.</span>{'\n'}<span className="dim">Pre-flight OK: everything the plan needs to find exists.</span>{'\n\n'}<span className="ok">+</span> site             Head Office  created, verified{'\n'}<span className="ok">+</span> user             a.patel@…  created, verified{'\n'}<span className="eq">✓</span> service_category IT Requests  reused{'\n'}<span className="ok">+</span> service          New Starter  created, verified{'\n'}<span className="ok">+</span> working_hours    Office Hours  created, verified{'\n'}<span className="ok">+</span> holiday          Christmas Day  created, verified{'\n'}<span className="ok">+</span> canned_text      Request received  created, verified{'\n\n'}<span className="dim">Run again:</span>{'\n'}<span className="eq">=</span> site             Head Office  already exists, reused{'\n'}<span className="eq">=</span> user             a.patel@…  already exists, reused{'\n'}<span className="dim">…nothing duplicated.</span>
+                </pre>
+                <p className="build-log-cap">The shape of a real build on our test instance, with the names changed. Every write is read back from Halo, and running the same plan again changes nothing.</p>
+              </div>
+            </div>
           </div>
         </section>
 
