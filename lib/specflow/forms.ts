@@ -19,5 +19,10 @@ export function splitForms(request: string, min = /\(read as a form design/.test
 export function formRequest(split: FormSplit, i: number): string {
   const f = split.forms[i];
   const n = split.forms.length;
-  return `${split.preamble}\n\nThis is part ${i + 1} of ${n} of a larger request. Plan ONLY the form "${f.title}" below; the other parts are planned separately and merged afterwards. Create every field this part needs, even if another part needs the same one: identical fields (same label, type and options) and a ticket type of the same name are merged automatically. Build the whole part: if a choice or question affects one setting (a team, a category), leave out only that setting and build everything else.\n\n=== FORM: ${f.title} ===\n${f.text}`;
+  // A shared part (teams, SLAs, groups...) is planned once on its own; every other part sees it, so it reuses those
+  // exact names and members instead of making up its own (12 Nov: a form part created the Infrastructure team with the
+  // wrong member).
+  const shared = split.forms.find((x, j) => j !== i && /shared|setup|general|common|foundation/i.test(x.title));
+  const context = shared ? `\n\nFor reference only (planned in its own part "${shared.title}"; do NOT plan it here): the shared setup this part relies on. If this part needs one of these teams, groups, SLAs, statuses or categories, create it with EXACTLY the name, members and settings given here (the copies are merged into one).\n---\n${shared.text}\n---` : '';
+  return `${split.preamble}\n\nThis is part ${i + 1} of ${n} of a larger request. Plan ONLY the form "${f.title}" below; the other parts are planned separately and merged afterwards. Create every field this part needs, even if another part needs the same one: identical fields (same label, type and options) and a ticket type of the same name are merged automatically. Build the whole part: if a choice or question affects one setting (a team, a category), leave out only that setting and build everything else.${context}\n\n=== FORM: ${f.title} ===\n${f.text}`;
 }

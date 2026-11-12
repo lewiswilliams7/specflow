@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * The planner's questions, each with its own answer box, just above the message box. Answers go as one reply
@@ -10,11 +10,18 @@ export function Questions({ questions }: { questions: string[] }) {
   const [answers, setAnswers] = useState<string[]>(() => questions.map(() => ''));
   const [open, setOpen] = useState(true);
   const [sent, setSent] = useState(false);
+  // Picks from the choice buttons, sent together with these answers.
+  const [picked, setPicked] = useState('');
+  useEffect(() => {
+    const keep = (e: Event) => setPicked(String((e as CustomEvent).detail ?? ''));
+    window.addEventListener('specflow:choices', keep);
+    return () => window.removeEventListener('specflow:choices', keep);
+  }, []);
   const filled = answers.filter((a) => a.trim()).length;
 
   if (sent) return null;
   const send = () => {
-    const text = questions.map((q, i) => (answers[i].trim() ? `${q}\n${answers[i].trim()}` : '')).filter(Boolean).join('\n\n');
+    const text = [picked, ...questions.map((q, i) => (answers[i].trim() ? `${q}\n${answers[i].trim()}` : ''))].filter(Boolean).join('\n\n');
     if (!text) return;
     setSent(true);
     window.dispatchEvent(new CustomEvent('specflow:send', { detail: text }));
@@ -52,8 +59,8 @@ export function Questions({ questions }: { questions: string[] }) {
             </label>
           ))}
           <div className="ask-foot">
-            <span className="subtle">{filled ? `${filled} of ${questions.length} answered` : 'Leave any you want to skip blank'}</span>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={!filled}>Send answers</button>
+            <span className="subtle">{filled ? `${filled} of ${questions.length} answered` : 'Leave any you want to skip blank'}{picked ? ' · your choices go with these' : ''}</span>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={!filled && !picked}>Send answers</button>
           </div>
         </form>
       ) : null}

@@ -287,7 +287,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
 
   const composer = (
     <div className="composer-dock">
-      {choices?.length && !pending ? <Choices key={turns.at(-1)?.id} choices={choices} /> : null}
+      {choices?.length && !pending ? <Choices key={turns.at(-1)?.id} choices={choices} hold={Boolean(questions?.length)} /> : null}
       {questions?.length && !pending ? <Questions key={`q-${turns.at(-1)?.id}`} questions={questions} /> : null}
       <form
         className="composer"

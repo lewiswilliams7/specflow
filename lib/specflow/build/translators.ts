@@ -1132,6 +1132,8 @@ export interface Translator {
   findExisting?: (step: PlanStep, refs: Refs) => Promise<Record<string, unknown> | undefined>;
   /** Read a record back when GET /resource/id doesn't (holidays have guid ids). */
   readBack?: (created: Record<string, unknown>, step: PlanStep, refs: Refs) => Promise<Record<string, unknown> | null>;
+  /** Dry run: what a created record will look like to later steps (e.g. a new team's members, for notifications). */
+  previewRow?: (step: PlanStep, refs: Refs) => Record<string, unknown>;
   /** Async lookups before build (build itself is synchronous): e.g. asset field names to ids. */
   prepare?: (step: PlanStep, refs: Refs) => Promise<void>;
   /** Only reuse is supported (create refused with a warning). */
@@ -1219,6 +1221,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
   team: {
     resource: 'Team',
     template: 'template-team.json',
+    // A team made in this plan: later notifications need its members in the dry run (12 Nov enterprise test).
+    previewRow: (step, refs) => ({ agents: (step.members ?? []).map((m) => ({ agent_id: refs[m]?.id })) }),
     build: (step, refs, warn) => {
       // Evidence: team-6. Members are agents[] rows { agent_id }; the template's members are dropped.
       const p = fromTemplate(templateFileFor(step, 'template-team.json'), 'Team');

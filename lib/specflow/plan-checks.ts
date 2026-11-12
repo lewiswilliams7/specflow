@@ -160,12 +160,13 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
 
   // A condition on a dropdown's answer (approval rules P7, ticket rules, conditional fields V1): the field must be a
   // dropdown and the answer one of its options.
-  const dropdownAnswer = (stepId: string, fieldRef: string, equals: string, what: string) => {
+  const dropdownAnswer = (stepId: string, fieldRef: string, equals: string, what: string, multiOk = false) => {
     const f = steps.find((x) => x.id === fieldRef);
     if (!f || f.object !== 'field') { errors.push(`step "${stepId}": ${what}'s field must be a field step (got "${fieldRef}")`); return; }
     const details = ctx.fieldDetails?.[f.match?.name ?? ''];
-    const isDropdown = f.action === 'create' ? f.type === 'dropdown' : / dropdown/.test(details ?? '');
-    if (!isDropdown) { errors.push(`step "${stepId}": ${what} can only test a dropdown; "${f.label ?? fieldLabel(details) ?? f.match?.name}" isn't one`); return; }
+    // V2: a show rule can also test a multi-select (the field shows when that option is among the answers).
+    const isDropdown = f.action === 'create' ? f.type === 'dropdown' || (multiOk && f.type === 'multiselect') : / dropdown/.test(details ?? '') || (multiOk && / multiselect| multi-select/.test(details ?? ''));
+    if (!isDropdown) { errors.push(`step "${stepId}": ${what} can only test a dropdown${multiOk ? ' or multi-select' : ''}; "${f.label ?? fieldLabel(details) ?? f.match?.name}" isn't one`); return; }
     const added = steps.filter((x) => x.object === 'field' && x.action === 'update' && x.match?.name === f.match?.name).flatMap((x) => x.set?.add_options ?? []);
     const options = f.action === 'create' ? f.options ?? [] : [...existingOptions(details), ...added];
     if (!options.some((o) => o.trim().toLowerCase() === String(equals ?? '').trim().toLowerCase()))
@@ -293,7 +294,7 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     for (const c of s.set?.show_field_when ?? []) {
       if (s.object !== 'ticket_type') { errors.push(`step "${s.id}": show_field_when only works on a ticket type`); continue; }
       if (c.field === c.when) errors.push(`step "${s.id}": a field can't depend on its own answer`);
-      dropdownAnswer(s.id, c.when, c.equals, 'show_field_when');
+      dropdownAnswer(s.id, c.when, c.equals, 'show_field_when', true);
     }
   }
 

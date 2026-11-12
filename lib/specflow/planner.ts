@@ -12,6 +12,8 @@ import { complete, parseJsonReply } from './llm';
 import { mandatoryEverywhere, planChecks } from './plan-checks';
 import { type Plan, type PlanStep, notReadyFeatureNames, readyFeaturePrompt, refsOf } from './plan-types';
 
+const PLAN_OBJECTS = ['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification', 'service', 'service_category', 'user', 'site', 'organisation', 'working_hours', 'holiday', 'canned_text', 'lookup_value', 'kb_article', 'faq_list', 'role', 'asset_type', 'asset_group'];
+
 export type Inventory = Awaited<ReturnType<typeof readInventory>>;
 const EXAMPLES = [onboarding, workflowTest, approvalTest2, tier1Test2];
 
@@ -123,7 +125,7 @@ ${readyFeaturePrompt()}
   - Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
   - SLA targets: use only priority names that appear in inventory.details.sla_targets. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities.
   - CHOICES (rule M13): when the request leaves a decision with a few clear answers, ask it in choices, not questions: { "question": short plain question naming the field or object, "options": 2 to 4 short answers }. Typical: a dropdown whose options aren't given ("Site / Building: where should the options come from?" options "A live list from Halo's sites", "A fixed list I'll give you", "Something else"); reuse an existing field or make a new one; which of two overlapping fields to keep. Build nothing for that part until it's answered (leave that step out and say so in reply). At most 3 choices; a choice the inventory or the request already answers is not a choice. Never ask the same thing again in questions: questions are only for facts you can't offer as options (a list of names, a date). Keep the choice question short (under 12 words).
-  - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
+  - Fields, sections, approval processes, actions, workflows and email templates you create must be used by a later step (placed on a form, attached to a ticket type...). Everything else the request asks for (teams, approval groups, SLAs, statuses, categories, services, organisations, sites, users, working hours, holidays, canned text, articles, roles, asset types, list values) is built as asked even when nothing else in the plan uses it. NEVER attach something to a ticket type the request didn't name just to use it.
   - The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
   - A rule on a number (cost over £300, more than 10 users) is captured as its OWN new dropdown field holding only the bands ("Under £300", "£300 or more"), placed on the form. Never add band options to an existing field, and never mix the band into another answer ("Laptop (£300 or more)"). Then use a rules stage for the approval that depends on it (P7). (M5)
   - An approval that should only happen for some answers of a dropdown is a rules stage (P7): {"rules": [{"field", "equals", "group" or "agent"}]}, and the process IS attached to the ticket type (the rules stage approves itself when no rule matches). Conditions on anything other than a dropdown's answer (a number, text, a date) can't be built: capture a band dropdown (M5), or if that's not possible, do NOT attach the approval, list it in unsupported, and only attach an approval that must run on every ticket, saying so in an assumption starting "Every ticket of this type is approved by". (M6)
@@ -153,7 +155,7 @@ ${who}${convo}${prev}${asked}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST
 ${request}
 ${ctx.previous ? REVISE : ''}${extra}`;
 
-  const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification', 'service', 'service_category', 'user', 'site', 'organisation', 'working_hours', 'holiday', 'canned_text', 'lookup_value', 'kb_article', 'faq_list', 'role', 'asset_type', 'asset_group']);
+  const OBJECTS = new Set(PLAN_OBJECTS);
   function validate(plan: Plan): string[] {
     const errors: string[] = [];
     if (!Array.isArray(plan.steps)) return ['"steps" must be an array'];
@@ -245,10 +247,13 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       seen.add(s.id);
       if (s.action === 'create' && s.name) createdHere.add(`${s.object}:${s.name.toLowerCase()}`);
     }
-    // Every created object must be used by a later step, except end products: ticket types, ticket rules (they act
-    // on tickets themselves) and notifications.
+    // Parts of something else (a field, a section, an approval process, an action, a workflow, an email template) must
+    // be used by a later step. Everything else is a deliverable in its own right. (12 Nov enterprise test: this check
+    // made the planner drop the organisation, sites, users and working hours, and wire an SLA, approval and categories
+    // onto an unrelated ticket type just to "use" them.)
     const used = new Set((plan.steps as PlanStep[]).flatMap((x) => refsOf(x)));
-    const endProducts = new Set(['ticket_type', 'ticket_rule', 'notification']);
+    const parts = new Set(['field', 'field_group', 'approval_process', 'outcome', 'workflow', 'email_template']);
+    const endProducts = new Set(PLAN_OBJECTS.filter((o) => !parts.has(o)));
     for (const s of plan.steps as PlanStep[])
       if (s.action === 'create' && !endProducts.has(s.object) && !used.has(s.id)) errors.push(`step "${s.id}": "${s.name}" is created but nothing uses it; attach it or drop it (ask in questions instead)`);
     errors.push(...planChecks(plan, {
@@ -425,8 +430,16 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
     steps: merged,
     existing_coverage: parts.flatMap(({ plan }) => plan.existing_coverage ?? []),
     unsupported: parts.flatMap(({ title, plan }) => tag(title, plan.unsupported)),
-    assumptions: parts.flatMap(({ title, plan }) => tag(title, plan.assumptions)),
-    questions: parts.flatMap(({ title, plan }) => tag(title, plan.questions)),
+    // One question asked by several parts (line managers synced from Entra...) is asked once; at most 6 in all, the
+    // rest kept as assumptions to check (12 Nov: 11 questions on a five-part brief).
+    ...(() => {
+      const seenQ = new Set<string>();
+      const all = parts.flatMap(({ title, plan }) => (plan.questions ?? []).map((q) => ({ q, key: q.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(), title })));
+      const unique = all.filter((x) => (seenQ.has(x.key) ? false : (seenQ.add(x.key), true)));
+      const shown = unique.slice(0, 6).map((x) => (x.q.toLowerCase().includes(x.title.toLowerCase()) || all.filter((y) => y.key === x.key).length > 1 ? x.q : `${x.title}: ${x.q}`));
+      const extra = unique.slice(6).map((x) => `Not asked yet (tell us if it matters): ${x.title}: ${x.q}`);
+      return { questions: shown, assumptions: [...parts.flatMap(({ title, plan }) => tag(title, plan.assumptions)), ...extra] };
+    })(),
     choices: parts.flatMap(({ title, plan }) => (plan.choices ?? []).map((c) => ({ ...c, question: c.question.toLowerCase().includes(title.toLowerCase()) ? c.question : `${title}: ${c.question}` }))),
   };
 }
@@ -439,7 +452,7 @@ export function mergeAndCheck(inventory: Inventory, request: string, parts: { ti
   // Up to 4 questions per part: a merged plan carries every part's.
   const errors = [
     ...parts.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this part (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`),
-    ...validate(plan).filter((e) => !(/^\d+ questions: keep at most 4/.test(e) && (plan.questions?.length ?? 0) <= 4 * parts.length)),
+    ...validate(plan).filter((e) => !(/^\d+ questions: keep at most 4/.test(e) && (plan.questions?.length ?? 0) <= 6)),
   ];
   dropRepeatedQuestions(plan);
   return { plan, errors, model: '' };

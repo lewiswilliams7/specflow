@@ -8,16 +8,20 @@ type Choice = { question: string; options: string[] };
  * Decisions the planner needs before it builds that part (rule M13), as small buttons just above the message box.
  * Picking an answer for every question sends them as the next message; "Other" puts the question in the box.
  */
-export function Choices({ choices }: { choices: Choice[] }) {
+/** hold: questions are waiting too, so picks go with their answers instead of being sent on their own (12 Nov: picking
+ *  both choices sent them and the 11 questions vanished unanswered). */
+export function Choices({ choices, hold = false }: { choices: Choice[]; hold?: boolean }) {
   const [picked, setPicked] = useState<Record<number, string>>({});
   const [sent, setSent] = useState(false);
 
   const pick = (i: number, option: string) => {
     const next = { ...picked, [i]: option };
     setPicked(next);
-    if (choices.every((_, j) => next[j])) {
+    const text = choices.map((c, j) => (next[j] ? `${c.question} ${next[j]}` : '')).filter(Boolean).join('\n');
+    if (hold) window.dispatchEvent(new CustomEvent('specflow:choices', { detail: text }));
+    else if (choices.every((_, j) => next[j])) {
       setSent(true);
-      window.dispatchEvent(new CustomEvent('specflow:send', { detail: choices.map((c, j) => `${c.question} ${next[j]}`).join('\n') }));
+      window.dispatchEvent(new CustomEvent('specflow:send', { detail: text }));
     }
   };
   const other = (c: Choice) => window.dispatchEvent(new CustomEvent('specflow:reply', { detail: `${c.question} ` }));

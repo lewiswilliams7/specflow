@@ -231,7 +231,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       const payload = t.build(step, refs, warn);
 
       if (!apply) {
-        refs[step.id] = { id: `<new ${step.id}>` as unknown as number, name: step.name ?? '', label: step.label };
+        refs[step.id] = { id: `<new ${step.id}>` as unknown as number, name: step.name ?? '', label: step.label, ...(t.previewRow ? { row: t.previewRow(step, refs) } : {}) };
         const extras = t.relatedPreview?.(step, refs) ?? [];
         record({ outcome: 'would create', payload, ...(extras.length ? { detail: `with ${extras.join('; ')}` } : {}) });
         say(`· ${label}  would create${extras.length ? `, with ${extras.length} related record(s)` : ''}`);
