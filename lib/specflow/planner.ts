@@ -343,6 +343,29 @@ function renameRefs<T>(v: T, map: Map<string, string>, key?: string): T {
 }
 const pascal = (t: string) => t.replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('');
 
+/**
+ * Every step after the steps it uses (by id, or by the name of something created in the plan), otherwise in the
+ * planner's order. Done in code, so an ordering slip never costs another model call (and never fails the checks).
+ */
+export function orderByDependency(steps: PlanStep[]): PlanStep[] {
+  const merged: PlanStep[] = [];
+  const placed = new Set<string>();
+  const ids = new Set(steps.map((s) => s.id));
+  const createdBy = new Map(steps.filter((s) => s.action === 'create' && s.name).map((s) => [`${s.object}:${s.name!.toLowerCase()}`, s.id] as [string, string]));
+  const needs = (s: PlanStep) => {
+    const byName = s.action !== 'create' && s.match?.name ? createdBy.get(`${s.object}:${String(s.match.name).toLowerCase()}`) : undefined;
+    return [...refsOf(s), ...(byName ? [byName] : [])];
+  };
+  const pending = [...steps];
+  while (pending.length) {
+    const i = pending.findIndex((s) => needs(s).every((r) => !ids.has(r) || placed.has(r) || r === s.id));
+    const [next] = pending.splice(i < 0 ? 0 : i, 1); // a cycle can't be ordered: keep it and let the checks say so
+    merged.push(next);
+    placed.add(next.id);
+  }
+  return merged;
+}
+
 /** Merge per-form plans: ids made unique per form, identical objects kept once, clashing field names made unique. */
 export function mergePlans(parts: { title: string; plan: Plan }[], request: string): Plan {
   const steps: PlanStep[] = [];
@@ -385,24 +408,7 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
     const at = new Set<string>();
     return { ...s, fields: s.fields.filter((f) => (at.has(f.ref) ? false : (at.add(f.ref), true))) };
   });
-  // A ticket type split across parts now uses fields from later parts: put every step after the ones it uses,
-  // keeping the original order otherwise.
-  const merged: PlanStep[] = [];
-  const placed = new Set<string>();
-  const ids = new Set(deduped.map((s) => s.id));
-  // An update or reuse that names something created in this plan (match.name) comes after that create.
-  const createdBy = new Map(deduped.filter((s) => s.action === 'create' && s.name).map((s) => [`${s.object}:${s.name!.toLowerCase()}`, s.id] as [string, string]));
-  const needs = (s: PlanStep) => {
-    const byName = s.action !== 'create' && s.match?.name ? createdBy.get(`${s.object}:${String(s.match.name).toLowerCase()}`) : undefined;
-    return [...refsOf(s), ...(byName ? [byName] : [])];
-  };
-  const pending = [...deduped];
-  while (pending.length) {
-    const i = pending.findIndex((s) => needs(s).every((r) => !ids.has(r) || placed.has(r) || r === s.id));
-    const [next] = pending.splice(i < 0 ? 0 : i, 1); // a cycle can't be ordered: keep it and let the checks say so
-    merged.push(next);
-    placed.add(next.id);
-  }
+  const merged = orderByDependency(deduped);
   const tag = (title: string, xs: string[] = []) => xs.map((x) => (x.toLowerCase().includes(title.toLowerCase()) ? x : `${title}: ${x}`));
   return {
     request,
@@ -486,6 +492,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
       plan = revising && !Array.isArray(parsed.steps) ? applyPatch(ctx.previous!, parsed) : parsed;
       // A revision is never a fresh plan, even when the plan it revises was (M12).
       if (revising && plan) delete plan.fresh;
+      if (plan && Array.isArray(plan.steps)) plan.steps = orderByDependency(plan.steps);
     } catch {
       errors = ['The planner reply was not valid JSON.'];
       continue;
