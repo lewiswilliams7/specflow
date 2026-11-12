@@ -100,6 +100,13 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
     email_templates: await list('EmailTemplate').then((r) => r.map(nameOf), () => [] as string[]),
     ticket_rules: await list('TicketRules').then((r) => r.map(nameOf), () => [] as string[]),
     agent_notifications: await list('Notification').then((r) => r.map(nameOf), () => [] as string[]),
+    // Round 30: names for the catalogue, imports, working hours and canned text (reuse before create).
+    services: await list('Service').then((r) => r.map(nameOf), () => [] as string[]),
+    service_categories: await list('ServiceCategory').then((r) => r.map((x) => nameOf(x).trim()), () => [] as string[]),
+    organisations: await list('Client').then((r) => r.map(nameOf), () => [] as string[]),
+    sites: await list('Site').then((r) => r.map(nameOf), () => [] as string[]),
+    working_hours: await list('Workday').then((r) => r.map(nameOf), () => [] as string[]),
+    canned_text: await list('CannedText').then((r) => r.map(nameOf), () => [] as string[]),
   };
   if (!detail) return { ...inventory, details: undefined };
 

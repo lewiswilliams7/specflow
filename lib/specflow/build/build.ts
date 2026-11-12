@@ -215,10 +215,12 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       }
 
       const expectedName = t.storedName?.(step) ?? step.name ?? '';
-      const existing = await findByName(t.resource, expectedName, t.nameKey);
+      if (t.reuseOnly) throw new Error(`${step.object} can only be reused, not created, for now`);
+      // Some records are matched on something other than the name (users by email, holidays by date): findExisting.
+      const existing = t.findExisting ? await t.findExisting(step, refs) : await findByName(t.resource, expectedName, t.nameKey);
       if (existing) {
         // Keep the full record: a later show rule or approval rule needs a new dropdown's options (V1b).
-        const row = firstRecord(await halo.get(`/${t.resource}/${existing.id}`, { includedetails: 'true' })) ?? existing;
+        const row = (t.readBack ? await t.readBack(existing, step, refs) : firstRecord(await halo.get(`/${t.resource}/${existing.id}`, { includedetails: 'true' }))) ?? existing;
         refs[step.id] = { id: existing.id as number, name: nameOf(existing, t.nameKey), label: step.label, row };
         record({ outcome: 'already exists', id: existing.id });
         say(`= ${label}  already exists (id ${existing.id}), reused`);
@@ -253,7 +255,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         }
 
         // Read back and check the name stuck: the cheapest proof it really saved.
-        const back = firstRecord(await halo.get(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
+        const back = t.readBack ? await t.readBack(created, step, refs) : firstRecord(await halo.get(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
         // V1b: later steps in this build read the new record (a dropdown's options for a show rule).
         if (back) refs[step.id] = { ...refs[step.id], row: back };
         const nameOk = nameOf(back, t.nameKey) === expectedName;

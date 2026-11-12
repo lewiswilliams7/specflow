@@ -17,6 +17,7 @@ const KIND: Record<string, string> = {
   team: 'Team', field: 'Field', sla: 'SLA', approval_process: 'Approval process', ticket_type: 'Ticket type', status: 'Status',
   outcome: 'Action', workflow: 'Workflow', agent: 'Agent', approval_group: 'Approval group', field_group: 'Form section',
   email_template: 'Email template', ticket_rule: 'Ticket rule', ticket_template: 'Child tickets', category: 'Category', notification: 'Notification',
+  service: 'Service', service_category: 'Service category', user: 'User', site: 'Site', organisation: 'Organisation', working_hours: 'Working hours', holiday: 'Bank holiday', canned_text: 'Canned text', lookup_value: 'List value',
 };
 const RESULT: Record<string, string> = { succeeded: 'Completed', failed: 'Stopped at a failure', refused: 'Refused before writing', stopped: 'Stopped by the user', running: 'Running' };
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Europe/London' }) : '');

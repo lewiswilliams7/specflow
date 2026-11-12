@@ -49,7 +49,12 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
     workflow: Object.keys(inventory.workflows_and_their_steps), status: inventory.statuses, outcome: inventory.actions,
     sla: inventory.slas, approval_process: inventory.approval_processes, approval_group: inventory.approval_groups, team: inventory.teams,
     category: (inventory as unknown as { categories?: string[] }).categories ?? [],
-  };
+    service: (inventory as unknown as { services?: string[] }).services ?? [],
+  service_category: (inventory as unknown as { service_categories?: string[] }).service_categories ?? [],
+  organisation: (inventory as unknown as { organisations?: string[] }).organisations ?? [],
+  working_hours: (inventory as unknown as { working_hours?: string[] }).working_hours ?? [],
+  canned_text: (inventory as unknown as { canned_text?: string[] }).canned_text ?? [],
+};
 
   // Names of the same kind of object: "Payroll" the category isn't "Payroll" the ticket type (11 Nov: a plan updated a
   // ticket type that didn't exist, and the fix then refused to create it, both because a category had that name).
@@ -144,7 +149,7 @@ ${who}${convo}${prev}${asked}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST
 ${request}
 ${ctx.previous ? REVISE : ''}${extra}`;
 
-  const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification']);
+  const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification', 'service', 'service_category', 'user', 'site', 'organisation', 'working_hours', 'holiday', 'canned_text', 'lookup_value']);
   function validate(plan: Plan): string[] {
     const errors: string[] = [];
     if (!Array.isArray(plan.steps)) return ['"steps" must be an array'];

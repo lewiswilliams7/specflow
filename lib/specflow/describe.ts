@@ -12,6 +12,7 @@ const OBJECT: Record<PlanStep['object'], string> = {
   team: 'team', field: 'field', sla: 'SLA', approval_process: 'approval process', ticket_type: 'ticket type', status: 'status',
   outcome: 'action', workflow: 'workflow', agent: 'agent', approval_group: 'approval group', field_group: 'form section',
   email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child ticket template', category: 'category', notification: 'agent notification',
+  service: 'service', service_category: 'service category', user: 'user', site: 'site', organisation: 'organisation', working_hours: 'working hours', holiday: 'bank holiday', canned_text: 'canned text', lookup_value: 'list value',
 };
 
 /** "CFhardware" → "Hardware" (its label on this instance), falling back to the name. */
@@ -111,6 +112,24 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
         out.push(`${step.by === 'email' ? 'Emails' : 'Pop-up for'} ${list(who) || 'nobody'} when ${ev[step.event ?? ''] ?? step.event}${scope.length ? `, only for ${list(scope)}` : ''}`);
         break;
       }
+      case 'service':
+        out.push(`New service in ${ref(step.service_category)}, logging ${ref(step.ticket_type)}${step.show_on_portal === false ? ', hidden from the portal' : ', on the portal'}${step.summary ? `: "${step.summary}"` : ''}`);
+        break;
+      case 'site':
+        out.push(`New site for ${ref(step.organisation)}`);
+        break;
+      case 'user':
+        out.push(`New user ${step.email ?? ''} at ${ref(step.site)}`);
+        break;
+      case 'working_hours':
+        out.push(`New working hours${step.start ? `, ${step.start} to ${step.end}` : ''}${step.days?.length ? ` on ${step.days.join(', ')}` : ''}`);
+        break;
+      case 'holiday':
+        out.push(`Bank holiday on ${step.date} for ${ref(step.working_hours)}`);
+        break;
+      case 'canned_text':
+        out.push(`New canned text: "${String(step.text ?? '').slice(0, 80)}${String(step.text ?? '').length > 80 ? '…' : ''}"`);
+        break;
       case 'ticket_template':
         out.push(`Each ${ref(step.attach_to)} raises ${list((step.children ?? []).map((c) => `"${c.summary}" (${ref(c.ticket_type)}${c.team ? `, ${ref(c.team)}` : ''})`)) || 'no child tickets'}`);
         break;
@@ -126,6 +145,12 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
 
   // update
   const st = step.set ?? {};
+  if (st.retire) out.push('retire it (hidden from lists and the portal; nothing deleted)');
+  for (const f of st.remove_fields ?? []) out.push(`take ${ref(f)} off the form (the field stays in Halo)`);
+  if (st.summary !== undefined) out.push(`summary "${st.summary}"`);
+  if (st.ticket_type) out.push(`log ${ref(st.ticket_type)}`);
+  if (st.service_category) out.push(`move to ${ref(st.service_category)}`);
+  if (st.show_on_portal !== undefined) out.push(st.show_on_portal ? 'show on the portal' : 'hide from the portal');
   for (const f of st.field_mandatory ?? []) out.push(`make ${ref(f.ref)} ${f.mandatory ? 'required' : 'optional'}`);
   for (const f of st.add_fields ?? []) out.push(`add ${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`);
   for (const g of st.add_groups ?? []) out.push(`add the section ${ref(g)}`);

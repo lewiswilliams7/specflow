@@ -237,6 +237,36 @@ export const SPIKE_MAP = {
     provenOnTrial: true as boolean | null,
   },
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
+  /** Round 30: the new objects are switched on only once the REAL builder has built them on the trial (dry-run gate,
+   *  apply, read-back, re-run without duplicates). Rounds 28-29 proved the payloads by hand-written requests only. */
+  builderProof: { round30: null as string | null },
+  /** Services (round 29, Concord trial): service 169 made from these keys alone and kept every one. */
+  service: {
+    category: 'service_category_id' as string | null,
+    ticketType: 'service_tickettype_id' as string | null,
+    summary: 'summary' as string | null,
+    portal: 'showinusercatalog' as string | null,
+  },
+  /** Users and sites (round 29): user 58 { name, firstname, surname, emailaddress, site_id }, site 21 { name, client_id },
+   *  both kept exactly. Never from a copy (S1b). */
+  people: {
+    userSite: 'site_id' as string | null,
+    userEmail: 'emailaddress' as string | null,
+    siteOrganisation: 'client_id' as string | null,
+  },
+  /** Organisations: round 28's copy answered 500 and still renamed Client 12 (S1b). A minimal create isn't proven yet. */
+  organisation: { create: null as string | null },
+  /** Working hours (round 28: a copy of workday 1 kept all 31 settings, as workday 3) and bank holidays (HL1, round 29:
+   *  POST /Holiday { workday_id, name, date, end_date, allday, holiday_type 1 } → holid 208 on workday 3). */
+  workingHours: { holidayResource: 'Holiday' as string | null, holidayWorkday: 'workday_id' as string | null },
+  /** Canned text: round 28's copy and a text update were kept; a create from name and text alone isn't proven yet. */
+  cannedText: { create: null as string | null },
+  /** Lookup values (LK1): adding one is proven (round 29), but which list is which (list names) isn't yet. */
+  lookupList: { names: null as string | null },
+  /** Retire a ticket type (T8, round 29: visible false on type 56, gone from the lists). */
+  retire: { key: 'visible' as string | null },
+  /** Remove a field from a form (round 28: rows sent without field 312 → gone from type 56). */
+  removeFields: { by: 'rows' as string | null },
   runbook: {
     resource: null as string | null,
   },
@@ -332,6 +362,57 @@ export const FEATURES: Feature[] = [
 - Swap one field for another on forms (e.g. a fixed dropdown for a dynamic one): ticket_type update (or field_group update) set: { replace_fields: [{ old: ref, new: ref }] }. The new field takes the old one's place, mandatory setting and show rules. Add an update step for EVERY ticket type and field group the old field is on (inventory.details). Enact never deletes: name the old field in assumptions so the user can delete it in Halo. Give the new field the same label and hint as the old one unless asked otherwise.`,
   },
   {
+    key: 'services',
+    name: 'services in the service catalogue',
+    sections: ['service', 'builderProof'],
+    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (one line shown on the portal), service_category: ref of a REUSED service_category step (inventory.service_categories), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { summary?, ticket_type?, service_category?, show_on_portal? }. service_category: REUSE ONLY, by exact name; a category that doesn't exist goes in unsupported. Check inventory.services first and update the one that exists.`,
+  },
+  {
+    key: 'imports',
+    name: 'users and sites from a list',
+    sections: ['people', 'builderProof'],
+    prompt: `- site: create { name, organisation: ref of a REUSED organisation step (inventory.organisations) }. Reuse sites already in inventory.sites.
+- user (an end user, NOT an agent): create { name: "First Last", firstname, surname, email, site: site ref }. Only people the brief or an attached list names, with their email. Never invent an email. Enact matches users on email: one already there is left alone.
+- organisation: REUSE ONLY for now, by exact name.`,
+  },
+  {
+    key: 'organisations',
+    name: 'new organisations',
+    sections: ['organisation'],
+    prompt: '',
+  },
+  {
+    key: 'working_hours',
+    name: 'working hours and bank holidays',
+    sections: ['workingHours', 'builderProof'],
+    prompt: `- working_hours: create { name, based_on: exact name from inventory.working_hours, start: "09:00", end: "17:30", days: ["mon","tue","wed","thu","fri"] } (same hours every day). Reuse by name when it exists.
+- holiday (a bank holiday on a working hours): create { name, date: "YYYY-MM-DD", working_hours: working_hours ref }. One step per date. Only dates the brief gives or that are certain (UK bank holidays for a year the brief names); say in assumptions which list you used. Enact skips a date already on those working hours.`,
+  },
+  {
+    key: 'canned_text',
+    name: 'canned text',
+    sections: ['cannedText'],
+    prompt: `- canned_text: create { name, text }: a saved reply agents insert into a ticket. text in plain words, line breaks as \n.`,
+  },
+  {
+    key: 'lookup_values',
+    name: 'values in Halo\'s own lists (closure codes, asset statuses, risk levels)',
+    sections: ['lookupList'],
+    prompt: '',
+  },
+  {
+    key: 'retire',
+    name: 'retiring ticket types',
+    sections: ['retire', 'builderProof'],
+    prompt: `- Retire an old ticket type: ticket_type update set: { retire: true }. It disappears from the ticket type lists and the portal; nothing is deleted and its tickets stay. Only for types the brief says to retire or replace.`,
+  },
+  {
+    key: 'remove_fields',
+    name: 'removing fields from a form',
+    sections: ['removeFields', 'builderProof'],
+    prompt: `- Take fields off a form: ticket_type update (or field_group update) set: { remove_fields: [field refs] }. The field itself stays in Halo with its data; only this form stops showing it. Never remove a field a show rule on the same form depends on.`,
+  },
+  {
     key: 'email_branding',
     name: 'branded email layouts (logo, colour and footer)',
     sections: ['emailBrand'],
@@ -398,6 +479,14 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'category') keys.add('categories');
   if (step.object === 'notification') keys.add('notifications');
   if (step.object === 'ticket_template') keys.add('child_tickets');
+  if (step.object === 'service' || step.object === 'service_category') keys.add('services');
+  if (step.object === 'user' || step.object === 'site') keys.add('imports');
+  if (step.object === 'organisation' && step.action === 'create') keys.add('organisations');
+  if (step.object === 'working_hours' || step.object === 'holiday') keys.add('working_hours');
+  if (step.object === 'canned_text') keys.add('canned_text');
+  if (step.object === 'lookup_value') keys.add('lookup_values');
+  if (step.set?.retire) keys.add('retire');
+  if (step.set?.remove_fields?.length) keys.add('remove_fields');
   if (step.set?.show_field_when?.length) keys.add('visibility');
   if (step.brand) keys.add('email_branding');
   if (step.hint !== undefined || step.set?.hint !== undefined) keys.add('field_hints');
@@ -466,6 +555,23 @@ function replaceRows(rows: Row[], pairs: { old: string; new: string }[], refs: R
 function checkReplaced(back: unknown, pairs: { old: string; new: string }[] | undefined, refs: Refs | undefined, what: string): string[] {
   const got = (back as Row[]) ?? [];
   return (pairs ?? []).filter((p) => got.some((r) => Number(r.fieldid) === Number(refs?.[p.old]?.id))).map((p) => `${what}: "${refs?.[p.old]?.row?.label ?? p.old}" is still on the form after saving; take it off by hand`);
+}
+
+/** Take fields off a form: the rows without them (round 28). Refuses a field a show rule on the form depends on. */
+function removeRows(rows: Row[], refsToRemove: string[], refs: Refs, warn: (m: string) => void, vk: string | null): Row[] {
+  const ids = new Set(refsToRemove.map((r) => Number(refs[r]?.id)).filter((n) => n > 0));
+  for (const r of refsToRemove) if (!(Number(refs[r]?.id) > 0)) warn(`remove_fields: "${r}" has no field id`);
+  const keep: Row[] = [];
+  for (const row of rows) {
+    if (!ids.has(Number(row.fieldid))) { keep.push(row); continue; }
+    const dependants = rows.filter((x) => (((vk && x[vk]) as Row[]) ?? []).some((g) => ((g.visibility_conditions as Row[]) ?? []).some((c) => Number(c.lookup_field_id) === Number(row.fieldid))));
+    if (dependants.length) { warn(`remove_fields: ${dependants.length} show rule(s) on this form depend on field ${row.fieldid}; not removed`); keep.push(row); }
+  }
+  return keep;
+}
+function checkRemoved(back: unknown, removed: string[] | undefined, refs: Refs | undefined, what: string): string[] {
+  if (!removed?.length || !refs) return [];
+  return removed.filter((r) => ((back as Row[]) ?? []).some((b) => Number(b.fieldid) === Number(refs[r]?.id))).map((r) => `${what}: ${refs[r]?.row?.label ?? refs[r]?.name ?? r} is still on it after saving`);
 }
 
 function keepRows(rows: unknown): Row[] {
@@ -740,13 +846,33 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification' | 'service' | 'service_category' | 'user' | 'site' | 'organisation' | 'working_hours' | 'holiday' | 'canned_text' | 'lookup_value';
   action: 'create' | 'reuse' | 'update';
   name?: string;
   /** email_template: the workspace's branding (rule EM1). Added by the app or the run, never by the planner. */
   brand?: EmailBrand;
   /** field: help text shown with the field (rule F11). */
   hint?: string;
+  /** service: one line on the portal; ticket_type / service_category refs; show_on_portal (default true). */
+  summary?: string;
+  ticket_type?: string;
+  service_category?: string;
+  show_on_portal?: boolean;
+  /** user: firstname, surname, email, site ref. site: organisation ref. */
+  firstname?: string;
+  surname?: string;
+  email?: string;
+  site?: string;
+  organisation?: string;
+  /** working_hours: same hours every day; days mon..sun. holiday: date YYYY-MM-DD on a working_hours ref. */
+  start?: string;
+  end?: string;
+  days?: string[];
+  date?: string;
+  working_hours?: string;
+  /** canned_text: the reply text. lookup_value: the list's lookupid. */
+  text?: string;
+  list?: number;
   /** field create: options from one of Enact's SQL lists, with Halo's settings copied from an existing SQL field (F12). */
   dynamic?: { list: SqlList; copy_settings_from: string };
   label?: string;
@@ -824,6 +950,15 @@ export interface PlanStep {
     show_field_when?: FieldCondition[];
     /** ticket_type: ref of an email_template step, emailed to the requester when a ticket is logged (EM4). */
     acknowledgement_email?: string;
+    /** ticket_type: retire it (T8: visible false). Never deleted. */
+    retire?: boolean;
+    /** ticket_type / field_group: take these fields off the form (the fields stay in Halo). */
+    remove_fields?: string[];
+    /** service */
+    summary?: string;
+    ticket_type?: string;
+    service_category?: string;
+    show_on_portal?: boolean;
     // ticket_rule: change the priority an existing rule sets (e.g. a priority matrix cell)
     priority?: number | string;
     // email_template
@@ -932,6 +1067,13 @@ export interface Translator {
   /** For action 'create': problems in the read-back beyond the name (e.g. a field that isn't a ticket field, rule F10). */
   verifyCreate?: (back: Record<string, unknown>, step: PlanStep) => string[];
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
+  /** Find a record this create would duplicate, when "same name" isn't the right test (users by email, sites by
+   *  organisation, holidays by date). Replaces the name lookup for creates. */
+  findExisting?: (step: PlanStep, refs: Refs) => Promise<Record<string, unknown> | undefined>;
+  /** Read a record back when GET /resource/id doesn't (holidays have guid ids). */
+  readBack?: (created: Record<string, unknown>, step: PlanStep, refs: Refs) => Promise<Record<string, unknown> | null>;
+  /** Only reuse is supported (create refused with a warning). */
+  reuseOnly?: boolean;
 }
 
 // ---------- helpers ----------
@@ -1389,6 +1531,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
         else if (id === undefined || id === null) warn(`acknowledgement_email: "${st.acknowledgement_email}" has no email template id yet`);
         else if (Number(current[key]) !== Number(id)) out[key] = id;
       }
+      if (st.retire && SPIKE_MAP.retire.key) out[SPIKE_MAP.retire.key] = false; // rule T8
+      if (st.remove_fields?.length) {
+        const key = m.fields as string;
+        const rows = (out[key] as Row[]) ?? keepRows(current[key]);
+        out[key] = removeRows(rows, st.remove_fields, refs, warn, SPIKE_MAP.visibility.conditions);
+      }
       if (!Object.keys(out).length) warn('update: nothing to set');
       return out;
     },
@@ -1399,6 +1547,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         if (k === m.fields) {
           out.push(...checkFieldRows(back[k], v, 'form'));
           out.push(...checkReplaced(back[k], step?.set?.replace_fields, refs, 'form'));
+          out.push(...checkRemoved(back[k], step?.set?.remove_fields, refs, 'form'));
           // V1: every condition we sent is on the field's row after saving.
           const vk = SPIKE_MAP.visibility.conditions as string;
           for (const r of v as Row[]) {
@@ -1475,6 +1624,165 @@ export const translators: Record<PlanStep['object'], Translator> = {
         for (const r of standard) if (!rows.some((x) => Number(x.fieldid) === Number(r.fieldid))) rows.push({ ...r, seq: rows.length + 1 });
       }
       return p;
+    },
+  },
+
+  // ---------- Round 30: minimal-payload objects (never from a copy, rule S1b) ----------
+
+  service_category: {
+    resource: 'ServiceCategory',
+    template: '',
+    reuseOnly: true,
+    build: (_step, _refs, warn) => { warn('service categories can only be reused for now'); return {}; },
+  },
+
+  service: {
+    // Round 29: service 169 from these keys alone, every one kept (SPIKE_MAP.service).
+    resource: 'Service',
+    template: '',
+    build: (step, refs, warn) => {
+      const m = SPIKE_MAP.service;
+      const p: Row = { name: step.name, showintechcatalog: true, servicerequestlbl: 'Request this Service' };
+      set(p, m.summary, step.summary ?? '', 'service summary', warn);
+      if (step.service_category) set(p, m.category, refs[step.service_category]?.id, 'service category', warn);
+      else warn('service: no service_category');
+      if (step.ticket_type) set(p, m.ticketType, refs[step.ticket_type]?.id, 'service ticket type', warn);
+      else warn('service: no ticket_type, so the portal would have nothing to log');
+      set(p, m.portal, step.show_on_portal !== false, 'show on the portal', warn);
+      return p;
+    },
+    update: (step, refs, warn) => {
+      const m = SPIKE_MAP.service;
+      const st = step.set ?? {};
+      const out: Row = {};
+      if (st.summary !== undefined && m.summary) out[m.summary] = st.summary;
+      if (st.ticket_type && m.ticketType) out[m.ticketType] = refs[st.ticket_type]?.id;
+      if (st.service_category && m.category) out[m.category] = refs[st.service_category]?.id;
+      if (st.show_on_portal !== undefined && m.portal) out[m.portal] = st.show_on_portal;
+      if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
+    },
+    verifyCreate: (back, step) => {
+      const m = SPIKE_MAP.service;
+      return m.summary && step.summary !== undefined && String(back[m.summary] ?? '') !== step.summary ? [`summary is "${back[m.summary]}", wanted "${step.summary}"`] : [];
+    },
+  },
+
+  organisation: {
+    // Reuse is proven everywhere; create stays behind SPIKE_MAP.organisation until a minimal create is proven.
+    resource: 'Client',
+    template: '',
+    build: (step) => ({ name: step.name }),
+  },
+
+  site: {
+    // Round 29: site 21 { name, client_id } kept exactly.
+    resource: 'Site',
+    template: '',
+    findExisting: async (step, refs) => {
+      const org = Number(refs[step.organisation ?? '']?.id);
+      const rows = extractList(await runtime().halo.get('/Site', { search: String(step.name ?? '') }));
+      return rows.find((r) => String(r.name ?? '').trim().toLowerCase() === String(step.name ?? '').trim().toLowerCase() && (!(org > 0) || Number(r.client_id) === org));
+    },
+    build: (step, refs, warn) => {
+      const p: Row = { name: step.name };
+      if (!step.organisation) warn('site: no organisation');
+      set(p, SPIKE_MAP.people.siteOrganisation, refs[step.organisation ?? '']?.id, 'site organisation', warn);
+      return p;
+    },
+  },
+
+  user: {
+    // Round 29: user 58 { name, firstname, surname, emailaddress, site_id } kept exactly. Matched on email.
+    resource: 'Users',
+    template: '',
+    findExisting: async (step) => {
+      const email = String(step.email ?? '').trim().toLowerCase();
+      if (!email) return undefined;
+      const rows = extractList(await runtime().halo.get('/Users', { search: email }));
+      return rows.find((r) => String(r.emailaddress ?? r.email ?? '').trim().toLowerCase() === email);
+    },
+    build: (step, refs, warn) => {
+      const m = SPIKE_MAP.people;
+      if (!step.email) warn('user: no email (Enact never invents one)');
+      const p: Row = { name: step.name ?? `${step.firstname ?? ''} ${step.surname ?? ''}`.trim(), firstname: step.firstname ?? '', surname: step.surname ?? '' };
+      set(p, m.userEmail, step.email, 'user email', warn);
+      if (!step.site) warn('user: no site');
+      set(p, m.userSite, refs[step.site ?? '']?.id, 'user site', warn);
+      return p;
+    },
+    verifyCreate: (back, step) => (String(back.emailaddress ?? '').toLowerCase() !== String(step.email ?? '').toLowerCase() ? [`email is "${back.emailaddress}", wanted "${step.email}"`] : []),
+  },
+
+  working_hours: {
+    // Round 28: a copy of Default Working Hours kept all 31 settings (workday 3). Holidays are separate (HL1).
+    resource: 'Workday',
+    template: 'template-workday.json',
+    build: (step, _refs, warn) => {
+      const p = fromTemplate(templateFileFor(step, 'template-workday.json'), 'Workday');
+      p.name = step.name;
+      p.holidays = [];
+      const t = (hhmm?: string) => (hhmm && /^\d{1,2}:\d{2}$/.test(hhmm) ? `1901-01-01T${hhmm.padStart(5, '0')}:00` : null);
+      if (step.start || step.end) {
+        const start = t(step.start);
+        const end = t(step.end);
+        if (!start || !end) warn('working_hours: start and end must be "HH:MM"');
+        else {
+          p.start = start; p.end = end; p.alldayssame = true;
+          for (const d of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']) { p[`start${d}`] = start; p[`end${d}`] = end; }
+        }
+      }
+      if (step.days?.length) {
+        const on = new Set(step.days.map((d) => d.slice(0, 3).toLowerCase()));
+        for (const d of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']) p[`inc${d}`] = on.has(d.slice(0, 3));
+      }
+      return p;
+    },
+  },
+
+  holiday: {
+    // Rule HL1 (round 29): POST /Holiday with workday_id; its id is a guid, the number is holid.
+    resource: 'Holiday',
+    template: '',
+    findExisting: async (step, refs) => {
+      const wd = Number(refs[step.working_hours ?? '']?.id);
+      if (!(wd > 0)) return undefined;
+      const rows = extractList(await runtime().halo.get('/Holiday'));
+      return rows.find((r) => Number(r.workday_id) === wd && String(r.date ?? '').startsWith(String(step.date ?? '')));
+    },
+    readBack: async (created) => extractList(await runtime().halo.get('/Holiday')).find((r) => String(r.id) === String(created.id) || (created.holid !== undefined && Number(r.holid) === Number(created.holid))) ?? null,
+    build: (step, refs, warn) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(step.date ?? ''))) warn('holiday: date must be YYYY-MM-DD');
+      if (!step.working_hours) warn('holiday: no working_hours');
+      const day = `${step.date}T00:00:00`;
+      const p: Row = { name: step.name, date: day, end_date: day, allday: true, holiday_type: 1, isrecurring: false };
+      set(p, SPIKE_MAP.workingHours.holidayWorkday, refs[step.working_hours ?? '']?.id, 'holiday working hours', warn);
+      return p;
+    },
+    verifyCreate: (back, step) => (String(back.date ?? '').startsWith(String(step.date)) ? [] : [`date is ${back.date}, wanted ${step.date}`]),
+  },
+
+  canned_text: {
+    // Round 28: copy 30 and its text update were kept; create from name + text is proven by round 30.
+    resource: 'CannedText',
+    template: '',
+    build: (step) => {
+      const text = String(step.text ?? '');
+      const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return { name: step.name, text, html: text.split('\n').map((l) => `<p>${esc(l) || '<br>'}</p>`).join('') };
+    },
+    verifyCreate: (back, step) => (String(back.text ?? '').replace(/\r\n/g, '\n').trim() === String(step.text ?? '').trim() ? [] : ['text not kept as sent']),
+  },
+
+  lookup_value: {
+    // Rule LK1 (round 29): POST /Lookup { lookupid, name, sequence }. Behind SPIKE_MAP.lookupList until lists have names.
+    resource: 'Lookup',
+    template: '',
+    findExisting: async (step) => extractList(await runtime().halo.get('/Lookup', { lookupid: String(step.list ?? 0) })).find((r) => Number(r.lookupid) === Number(step.list) && String(r.name ?? '').trim().toLowerCase() === String(step.name ?? '').trim().toLowerCase()),
+    readBack: async (created, step) => extractList(await runtime().halo.get('/Lookup', { lookupid: String(step.list ?? 0) })).find((r) => Number(r.lookupid) === Number(step.list) && String(r.id) === String(created.id)) ?? null,
+    build: (step, _refs, warn) => {
+      if (!(Number(step.list) !== 0 && Number.isFinite(Number(step.list)))) warn('lookup_value: no list');
+      return { lookupid: Number(step.list), name: step.name, sequence: 99 };
     },
   },
 
@@ -1889,5 +2197,13 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.agents ?? []),
     step.attach_to,
     ...(step.children ?? []).flatMap((c) => [c.ticket_type, c.team]),
+    step.ticket_type,
+    step.service_category,
+    step.set?.ticket_type,
+    step.set?.service_category,
+    step.site,
+    step.organisation,
+    step.working_hours,
+    ...(step.set?.remove_fields ?? []),
   ].filter((r): r is string => Boolean(r));
 }

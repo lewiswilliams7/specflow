@@ -79,6 +79,10 @@ export function needsFor(steps: PlanStep[]): Need[] {
           maxDetails: 40,
         });
         break;
+      case 'working_hours':
+        // Round 28: Halo's own working hours copy cleanly; holidays are dropped (HL1) and added as /Holiday rows.
+        add({ file: 'template-workday.json', resource: 'Workday', why: 'working hours', accept: (d) => typeof d.start === 'string' });
+        break;
       case 'sla':
         add({ file: 'template-sla.json', resource: 'SLA', why: 'SLA', accept: (d) => Array.isArray(d.priorities) && d.priorities.length > 0 });
         break;
@@ -167,6 +171,8 @@ const RESOURCE_OF: Record<PlanStep['object'], string> = {
   field: 'FieldInfo', ticket_type: 'TicketType', sla: 'SLA', approval_process: 'ApprovalProcess', status: 'Status',
   outcome: 'Outcome', workflow: 'Workflow', team: 'Team', approval_group: 'CAB', field_group: 'FieldGroup',
   agent: 'Agent', email_template: 'EmailTemplate', ticket_rule: 'TicketRules', ticket_template: 'Template', category: 'Category', notification: 'Notification',
+  service: 'Service', service_category: 'ServiceCategory', user: 'Users', site: 'Site', organisation: 'Client', working_hours: 'Workday',
+  holiday: 'Holiday', canned_text: 'CannedText', lookup_value: 'Lookup',
 };
 
 /** Make sure every template the plan needs exists for this instance. Returns lines describing what was picked. */

@@ -14,15 +14,22 @@
  * organisation, knowledge base article (with its FAQ list), (3) a bank holiday through /Holiday on the sample working
  * hours, (4) a closure code through /Lookup, (5) a role (ids are guids, numeric id in id_int), (6) where departments live.
  *
+ * Round 30 (12 Nov): the new builder objects proven through the REAL builder (dry-run gate, apply, read-back), then the
+ * same plan run again to prove nothing is duplicated (users by email, sites by organisation, holidays by date). Then a
+ * show rule on a multi-select, removing a field and retiring the type, all by the builder. Plus: list names for /Lookup,
+ * where role permissions live, minimal organisation / article / email rule creates (overwrite-checked).
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
+import { buildWithGate } from './build';
 import { cleanForCreate } from './clean';
 import { extractList, firstRecord, runtime } from './runtime';
+import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 29;
+export const ROUND = 30;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -196,133 +203,116 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
   log(`Round ${ROUND}: ${opts.instance} ${apply ? '(will make zz samples on the trial)' : '(read-only)'}`);
 
-  // ---------- 1. Retire a ticket type: "visible" on the round 28 sample ----------
-  await area('retire a ticket type', async () => {
-    const A = 'retire a ticket type';
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === `${SAMPLE} retire me`);
-    if (!tt) { note(A, 'skipped', 'no "zz Enact sample retire me" (round 28 makes it)'); return; }
-    const d = await detail('TicketType', tt.id);
-    note(A, 'before', pick(d, /^(visible|enduserscanselect|hide_respond|hide_anon_email|hide_anon_contact_info|hide_anon_phonenumber|inactive)$/));
-    if (!apply) return;
-    // Put back the round 28 tries (they were the wrong settings), then switch it off with visible.
-    await update(A, 'undo round 28 tries', 'TicketType', Number(tt.id), { hide_respond: false, hide_anon_email: 0, hide_anon_contact_info: false, hide_anon_phonenumber: false });
-    await update(A, 'visible off', 'TicketType', Number(tt.id), { visible: false });
-    const listed = (await list('TicketType')).rows.some((t) => Number(t.id) === Number(tt.id));
-    const listedAll = (await list('TicketType', { showall: 'true' })).rows.some((t) => Number(t.id) === Number(tt.id));
-    note(A, 'still in the ticket type list', { default_list: listed, showall: listedAll });
-  });
 
-  // ---------- 2. Services: a minimal create on Halo's own category and the sample ticket type ----------
-  await area('services', async () => {
-    const A = 'services';
+  /** Run a plan with the real builder (dry-run gate B1, apply, read-back). */
+  async function prove(label: string, plan: Plan): Promise<Row[]> {
+    if (!apply) return [];
+    const lines: string[] = [];
+    try {
+      const r = await buildWithGate(plan, { apply: true, emit: (e) => { if (e.type === 'line') lines.push(e.text); } });
+      const log = r.log.map((l) => ({ step: l.step, outcome: l.outcome, id: l.id, error: l.error, warnings: l.warnings, detail: l.detail }));
+      note('builder proofs', label, { ok: r.ok, refused: r.refused, problems: r.problems, log, output: lines.slice(-40) });
+      summary.push(r.ok ? `✓ ${label}: ${log.map((l) => `${l.step} ${l.outcome}`).join(', ')}` : `✗ ${label}: ${[...r.problems, ...log.filter((l) => l.error).map((l) => `${l.step}: ${l.error}`)].join(' | ').slice(0, 400)}`);
+      return log as Row[];
+    } catch (e) {
+      note('builder proofs', `${label} error`, err(e));
+      summary.push(`✗ ${label}: ${err(e).slice(0, 200)}`);
+      return [];
+    }
+  }
+
+  log(`Round ${ROUND}: ${opts.instance} ${apply ? '(will build zz samples on the trial)' : '(read-only)'}`);
+
+  // ---------- 1. The new objects through the real builder, then the same plan again ----------
+  await area('builder', async () => {
+    const A = 'builder';
+    const org = (await list('Client')).rows.find((r) => own(r) && Number(r.id) !== 12); // 12 was renamed by round 28 (S1b)
     const cat = (await list('ServiceCategory')).rows.find(own);
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === `${SAMPLE} retire me`) ?? (await list('TicketType')).rows.find(own);
-    note(A, 'using', { category: cat && `${cat.id} ${nameOf(cat)}`, ticket_type: tt && `${tt.id} ${nameOf(tt)}` });
-    await create(A, 'service', 'Service', { name: `${SAMPLE} service minimal`, summary: 'zz Enact sample: what this service is for', service_category_id: Number(cat?.id ?? 0), service_tickettype_id: Number(tt?.id ?? 0), showinusercatalog: true, showintechcatalog: true, servicerequestlbl: 'Request this Service' });
+    const fields = (await list('FieldInfo')).rows;
+    const has = (n: string) => fields.some((f) => f.name === n);
+    note(A, 'using', { organisation: org && nameOf(org), service_category: cat && nameOf(cat).trim(), sample_fields: ['CFzzEnactSampleMulti', 'CFzzEnactSampleOtherDetails', 'CFzzEnactSampleRemoveMe'].map((n) => `${n}: ${has(n)}`) });
+    if (!org || !cat) { summary.push('✗ builder: no organisation or service category to reuse'); return; }
+    const R = 'zz Enact r30';
+    const planA = {
+      request: 'Enact learning run 30: catalogue, imports, working hours, canned text',
+      steps: [
+        { id: 'org', object: 'organisation', action: 'reuse', match: { name: nameOf(org) } },
+        { id: 'site', object: 'site', action: 'create', name: `${R} site`, organisation: 'org' },
+        { id: 'user', object: 'user', action: 'create', name: `${R} user`, firstname: 'zz Enact', surname: 'r30 user', email: 'zz.enact.r30@example.invalid', site: 'site' },
+        { id: 'multi', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleMulti' } },
+        { id: 'why', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleOtherDetails' } },
+        { id: 'gone', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleRemoveMe' } },
+        { id: 'form', object: 'ticket_type', action: 'create', name: `${R} form`, fields: [{ ref: 'multi' }, { ref: 'why', mandatory: true }, { ref: 'gone' }] },
+        { id: 'cat', object: 'service_category', action: 'reuse', match: { name: nameOf(cat).trim() } },
+        { id: 'svc', object: 'service', action: 'create', name: `${R} service`, summary: 'zz Enact r30: request the sample form', service_category: 'cat', ticket_type: 'form' },
+        { id: 'hours', object: 'working_hours', action: 'create', name: `${R} hours`, start: '08:30', end: '17:30', days: ['mon', 'tue', 'wed', 'thu', 'fri'] },
+        { id: 'xmas', object: 'holiday', action: 'create', name: `${R} Christmas`, date: '2027-12-27', working_hours: 'hours' },
+        { id: 'boxing', object: 'holiday', action: 'create', name: `${R} Boxing Day`, date: '2027-12-28', working_hours: 'hours' },
+        { id: 'canned', object: 'canned_text', action: 'create', name: `${R} canned text`, text: 'Thanks for getting in touch.\nWe are looking into this now.' },
+      ],
+    } as unknown as Plan;
+    await prove('A: create the new objects', planA);
+    await prove('A again: nothing duplicated', planA);
+    // Read-backs a person would check.
+    const hours = (await list('Workday')).rows.find((r) => nameOf(r) === `${R} hours`);
+    const hd = hours ? await detail('Workday', hours.id) : null;
+    note(A, 'working hours read back', hd ? { ...pick(hd, /^(name|start|end|alldayssame|incmonday|incsaturday|startmonday|endfriday)$/), holidays: ((hd.holidays as Row[]) ?? []).map((h) => `${String(h.date).slice(0, 10)} ${h.name}`) } : null);
+    const svc = (await list('Service')).rows.find((r) => nameOf(r) === `${R} service`);
+    note(A, 'service read back', svc ? pick(await detail('Service', svc.id), /^(name|summary|service_category_name|service_tickettype_name|showinusercatalog)$/) : null);
+    const users = (await list('Users', { search: 'zz.enact.r30@example.invalid' })).rows;
+    note(A, 'users with the r30 email', users.length);
+
+    // B: show rule on the multi-select (V2) and remove a field, by the builder.
+    await prove('B: multi-select show rule and remove a field', {
+      request: 'Enact learning run 30: form changes',
+      steps: [
+        { id: 'multi', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleMulti' } },
+        { id: 'why', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleOtherDetails' } },
+        { id: 'gone', object: 'field', action: 'reuse', match: { name: 'CFzzEnactSampleRemoveMe' } },
+        { id: 'form', object: 'ticket_type', action: 'update', match: { name: `${R} form` }, set: { show_field_when: [{ field: 'why', when: 'multi', equals: 'Other' }], remove_fields: ['gone'] } },
+      ],
+    } as unknown as Plan);
+    // C: retire it.
+    await prove('C: retire the form', { request: 'Enact learning run 30: retire', steps: [{ id: 'form', object: 'ticket_type', action: 'update', match: { name: `${R} form` }, set: { retire: true } }] } as unknown as Plan);
+    note(A, 'retired form still listed', (await list('TicketType')).rows.some((t) => nameOf(t) === `${R} form`));
   });
 
-  // ---------- 3. Imports: minimal user, site, organisation; where departments live ----------
-  await area('imports', async () => {
-    const A = 'imports';
-    const client = (await list('Client')).rows.find(own);
-    const clientD = client ? await detail('Client', client.id) : null;
-    const site = (await list('Site')).rows.find((r) => own(r) && Number(r.client_id ?? client?.id) === Number(client?.id));
-    note(A, 'using', { organisation: client && `${client.id} ${nameOf(client)}`, toplevel_id: clientD?.toplevel_id, site: site && `${site.id} ${nameOf(site)}` });
-    const orgId = await create(A, 'organisation', 'Client', { name: `${SAMPLE} organisation`, toplevel_id: Number(clientD?.toplevel_id ?? 1) });
-    const siteId = await create(A, 'site', 'Site', { name: `${SAMPLE} import site`, client_id: Number(orgId ?? client?.id ?? 0) });
-    await create(A, 'user', 'Users', { name: `${SAMPLE} import user`, firstname: 'zz Enact', surname: 'sample import user', emailaddress: 'zz.enact.import@example.invalid', site_id: Number(siteId ?? site?.id ?? 0) });
-    // Departments: the users list carries them; read one user's departments and try the likely endpoints.
-    const u = (await list('Users')).rows.find(own);
-    const ud = u ? await detail('Users', u.id) : null;
-    note(A, 'a user\'s departments', ud?.departments ?? null);
-    await discover(A, 'departments', ['Department', 'Departments', 'UserDepartment', 'Organisation', 'Lookup/Department'], undefined);
-    const team = (await list('Team')).rows[0];
-    note(A, 'team keys (departments may sit with teams)', team ? Object.keys(team) : null);
-  });
-
-  // ---------- 4. Knowledge base: a minimal article in an existing FAQ list ----------
-  await area('knowledge base', async () => {
-    const A = 'knowledge base';
-    const kb = (await list('KBArticle')).rows.find((r) => own(r) && Number(r.id) !== 22);
-    const d = kb ? await detail('KBArticle', kb.id) : null;
-    const faq = ((d?.faqlists as Row[]) ?? [])[0];
-    note(A, 'faq list shape (Halo own)', faq ?? null);
-    await discover(A, 'faq lists', ['FAQLists', 'FAQList', 'FaqLists', 'KBFAQ']);
-    if (!faq) return;
-    const { id: _i, guid: _g, ...faqRef } = faq;
-    await create(A, 'article', 'KBArticle', { name: `${SAMPLE} article`, description: '<p>zz Enact sample article body</p>', resolution: '', faqlists: [{ ...faqRef, id: faq.id }] });
-  });
-
-  // ---------- 5. Bank holiday through /Holiday on the sample working hours ----------
-  await area('bank holidays', async () => {
-    const A = 'bank holidays';
-    const wd = (await list('Workday')).rows.find((r) => nameOf(r) === `${SAMPLE} working hours`);
-    note(A, 'sample working hours', wd ? wd.id : 'not found');
-    // Round 28 sent a holiday row that still carried holid 112 and workday_id 1 (Default Working Hours, New Year's Day).
-    const h112 = (await list('Holiday')).rows.find((h) => Number(h.holid) === 112);
-    note(A, 'holiday 112 now (check round 28 did not change it)', h112 ? pick(h112, /^(holid|workday_id|date|end_date|name)$/) : 'not found');
-    if (!wd) return;
-    const before = new Set((await list('Holiday')).rows.map((h) => String(h.holid)));
-    if (!apply) return;
-    try {
-      const res = firstRecord(await runtime().halo.post('/Holiday', [{ workday_id: Number(wd.id), name: `${SAMPLE} holiday`, date: '2027-12-27T00:00:00', end_date: '2027-12-27T00:00:00', allday: true, holiday_type: 1, isrecurring: false }]));
-      const holid = Number(res?.holid ?? res?.id);
-      note(A, 'created', res ? pick(res, /^(id|holid|workday_id|date|end_date|name|allday)$/) : null);
-      if (before.has(String(holid))) summary.push(`!! holiday: saved over existing holiday ${holid}`);
-      const back = (await detail('Workday', wd.id))?.holidays as Row[] | undefined;
-      note(A, 'on the sample working hours', (back ?? []).map((h) => pick(h, /^(holid|date|name)$/)));
-      summary.push(`· bank holiday via /Holiday: ${(back ?? []).some((h) => h.name === `${SAMPLE} holiday`) ? 'on the working hours' : 'not on the working hours'}`);
-    } catch (e) { note(A, 'error', err(e)); summary.push(`✗ holiday: ${err(e).slice(0, 160)}`); }
-  });
-
-  // ---------- 6. Closure codes and other small lists through /Lookup ----------
-  await area('lists', async () => {
-    const A = 'lists';
+  // ---------- 2. Which /Lookup list is which: does list 11 name the others? ----------
+  await area('lookup list names', async () => {
+    const A = 'lookup list names';
     const rows = (await list('Lookup')).rows;
-    const byList = new Map<number, Row[]>();
-    for (const r of rows) byList.set(Number(r.lookupid), [...(byList.get(Number(r.lookupid)) ?? []), r]);
-    note(A, 'lookup lists (lookupid: count, first names)', Object.fromEntries([...byList].map(([k, v]) => [k, `${v.length}: ${v.slice(0, 4).map((r) => r.name).join(' | ')}`])));
-    // Which list does a dropdown field use? The closure-like field "AI Auto Resolution" (lookup 174) and Halo's category fields.
-    const f = await detail('FieldInfo', 308);
-    note(A, 'field 308 lookup', pick(f, /^(id|name|lookup|lookupid|values)$/));
-    const target = byList.get(174) ? 174 : null;
-    if (!target) return;
-    const before = new Set((byList.get(174) ?? []).map((r) => String(r.id)));
-    if (!apply) return;
-    try {
-      const res = firstRecord(await runtime().halo.post('/Lookup', [{ lookupid: 174, name: `${SAMPLE} closure code`, sequence: 99 }]));
-      note(A, 'created in list 174', res ? pick(res, /^(id|lookupid|name|sequence)$/) : null);
-      if (before.has(String(res?.id))) summary.push(`!! lookup: saved over existing value ${res?.id}`);
-      const after = (await list('Lookup', { lookupid: '174' })).rows;
-      summary.push(`· closure code via /Lookup: ${after.some((r) => r.name === `${SAMPLE} closure code`) ? 'in the list' : 'not in the list'}`);
-    } catch (e) { note(A, 'error', err(e)); summary.push(`✗ lookup: ${err(e).slice(0, 160)}`); }
+    const ids = new Set(rows.map((r) => Number(r.lookupid)));
+    const l11 = rows.filter((r) => Number(r.lookupid) === 11);
+    note(A, 'list 11 (id → name, and whether a list with that lookupid exists)', l11.slice(0, 60).map((r) => `${r.id} ${r.name} ${ids.has(Number(r.id)) ? '[list exists]' : ''}`));
+    const fields = (await list('FieldInfo')).rows.filter((f) => Number(f.lookup) > 0).slice(0, 20);
+    note(A, 'fields and their lookup list', fields.map((f) => `${f.label ?? f.name} → ${f.lookup}`));
   });
 
-  // ---------- 7. Roles: ids are guids; copy Halo's "IT Agent" under a zz name ----------
+  // ---------- 3. Minimal creates still to prove (overwrite-checked) ----------
+  await area('minimal creates', async () => {
+    const A = 'minimal creates';
+    await create(A, 'organisation', 'Client', { name: 'zz Enact r30 organisation' });
+    const kb = (await list('KBArticle')).rows.find((r) => own(r) && Number(r.id) !== 22);
+    const faq = (((kb ? await detail('KBArticle', kb.id) : null)?.faqlists as Row[]) ?? [])[0];
+    if (faq) await create(A, 'article', 'KBArticle', { name: 'zz Enact r30 article', description: '<p>zz Enact r30 article body</p>', faqlists: [{ id: faq.id }] });
+    else note(A, 'article', 'no FAQ list to put it in');
+    await create(A, 'email rule (switched off)', 'EmailRule', { name: 'zz Enact r30 email rule', type: 1, subject: 'ZZENACTR30', enabled: false, seq: 99 });
+  });
+
+  // ---------- 4. Where role permissions live ----------
   await area('roles', async () => {
     const A = 'roles';
-    const roles = (await list('Roles')).rows;
-    const src = roles.find((r) => /^it agent$/i.test(nameOf(r))) ?? roles.find((r) => !nameOf(r).startsWith('zz ') && !/admin/i.test(nameOf(r)));
-    const d = src ? await detail('Roles', src.id) : null;
-    note(A, 'source', src ? `${src.id} ${nameOf(src)}` : null);
-    note(A, 'role detail keys', Object.keys(d ?? {}).length);
-    note(A, 'role permission-like settings (first 40)', Object.fromEntries(Object.entries(d ?? {}).filter(([k, v]) => typeof v === 'boolean' || typeof v === 'number').slice(0, 40)));
-    if (!apply || !d) return;
-    const name = `${SAMPLE} role`;
-    const again = roles.find((r) => nameOf(r) === name);
-    if (again) { note(A, 'sample', `reused ${again.id}`); return; }
-    const payload = cleanForCreate(d) as Row;
-    delete payload.id; delete payload.id_int; delete payload.guid;
-    payload.name = name;
-    const before = new Set(roles.map((r) => String(r.id)));
-    try {
-      const res = firstRecord(await runtime().halo.post('/Roles', [payload]));
-      if (before.has(String(res?.id))) { summary.push(`!! role: saved over existing role ${res?.id}`); note(A, 'OVERWRITE', res?.id); return; }
-      const back = res ? await detail('Roles', res.id) : null;
-      const lost = Object.entries(payload).filter(([k, v]) => (v === null || typeof v !== 'object') && JSON.stringify(back?.[k]) !== JSON.stringify(v)).map(([k, v]) => ({ key: k, sent: short(v), kept: short(back?.[k]) }));
-      note(A, 'sample', { id: res?.id, keys_sent: Object.keys(payload).length, not_kept_as_sent: lost.slice(0, 30) });
-      summary.push(`✓ role: ${res?.id} (${lost.length} not kept as sent)`);
-    } catch (e) { note(A, 'error', err(e)); summary.push(`✗ role: ${err(e).slice(0, 160)}`); }
+    const role = (await list('Roles')).rows.find((r) => /^it agent$/i.test(nameOf(r)));
+    if (!role) return;
+    const d = await detail('Roles', role.id);
+    note(A, 'role detail', settings(d));
+    for (const ep of ['RolePermission', 'RolePermissions', 'Permissions', 'RoleAccess', `Roles/${role.id}/Permissions`]) {
+      const r = await list(ep, { role_id: String(role.id) });
+      note(A, `endpoint ${ep}`, r.error ? r.error.slice(0, 120) : { rows: r.rows.length, first: r.rows.slice(0, 2).map((x) => settings(x)) });
+    }
+    const agent = (await list('Agent')).rows.find((a) => Number(a.id) > 1);
+    const ad = agent ? await detail('Agent', agent.id) : null;
+    note(A, 'agent role and permission keys', Object.keys(ad ?? {}).filter((k) => /role|perm|access|can|allow/i.test(k)).slice(0, 60));
   });
 
   return { out, summary };

@@ -239,6 +239,37 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     }
   }
 
+  // Round 30 objects: every ref points at the right kind of step; nothing invented.
+  const kindOf = (ref?: string) => steps.find((x) => x.id === ref)?.object;
+  const needKind = (s: PlanStep, ref: string | undefined, kind: string, what: string, required = true) => {
+    if (!ref) { if (required) errors.push(`step "${s.id}": ${what} is missing`); return; }
+    if (kindOf(ref) !== kind) errors.push(`step "${s.id}": ${what} must be a ${kind} step (got "${ref}")`);
+  };
+  for (const s of steps) {
+    if (s.object === 'service_category' && s.action !== 'reuse') errors.push(`step "${s.id}": service categories can only be reused for now`);
+    if (s.object === 'service' && s.action === 'create') {
+      needKind(s, s.service_category, 'service_category', 'service_category');
+      needKind(s, s.ticket_type, 'ticket_type', 'ticket_type');
+    }
+    if (s.object === 'service' && s.action === 'update') {
+      if (s.set?.service_category) needKind(s, s.set.service_category, 'service_category', 'set.service_category');
+      if (s.set?.ticket_type) needKind(s, s.set.ticket_type, 'ticket_type', 'set.ticket_type');
+    }
+    if (s.object === 'site' && s.action === 'create') needKind(s, s.organisation, 'organisation', 'organisation');
+    if (s.object === 'user' && s.action === 'create') {
+      needKind(s, s.site, 'site', 'site');
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(s.email ?? ''))) errors.push(`step "${s.id}": a user needs a real email address from the brief (got "${s.email ?? ''}")`);
+    }
+    if (s.object === 'holiday' && s.action === 'create') {
+      needKind(s, s.working_hours, 'working_hours', 'working_hours');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s.date ?? ''))) errors.push(`step "${s.id}": a holiday needs date "YYYY-MM-DD"`);
+    }
+    if (s.object === 'working_hours' && s.action === 'create' && (s.start || s.end) && !(/^\d{1,2}:\d{2}$/.test(String(s.start)) && /^\d{1,2}:\d{2}$/.test(String(s.end)))) errors.push(`step "${s.id}": working hours start and end are "HH:MM"`);
+    if (s.object === 'canned_text' && s.action === 'create' && !String(s.text ?? '').trim()) errors.push(`step "${s.id}": canned text needs text`);
+    if (s.set?.retire && s.object !== 'ticket_type') errors.push(`step "${s.id}": only a ticket type can be retired`);
+    for (const r of s.set?.remove_fields ?? []) if (kindOf(r) !== 'field') errors.push(`step "${s.id}": remove_fields must list field steps (got "${r}")`);
+  }
+
   // EM4: an acknowledgement email is an email template, set on a ticket type.
   for (const s of steps) {
     const ack = s.set?.acknowledgement_email;
