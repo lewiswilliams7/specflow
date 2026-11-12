@@ -106,6 +106,7 @@ export default async function InstancePage({ params, searchParams }: { params: P
           <span title={`Last read ${when(inst.inventory_at)}`}>Read {when(inst.inventory_at)}</span>
         </div>
         {readForm}
+        <Link className="btn btn-quiet btn-sm hide-sm" href={`/app/instances/${inst.id}/as-built`} title="Every ticket type, field, workflow, SLA and approval, ready to print">As-built document</Link>
         <Link className="btn btn-quiet btn-icon" href={`/app/instances/${inst.id}/settings`} aria-label="Instance settings" title="Settings">
           <IconSettings />
         </Link>

@@ -227,6 +227,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         continue;
       }
 
+      if (t.prepare) await t.prepare(step, refs);
       const payload = t.build(step, refs, warn);
 
       if (!apply) {

@@ -27,6 +27,9 @@
  * asset type (rows copied from one of Halo's own types onto the zz type); a read-only field set by the builder; mailbox
  * settings read (never changed).
  *
+ * Round 33 (12 Nov): an asset type WITH fields through the real builder (twice), and a read-only field added and
+ * locked in one builder step.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -37,7 +40,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 32;
+export const ROUND = 33;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -231,71 +234,28 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
   log(`Round ${ROUND}: ${opts.instance} ${apply ? '(will build zz samples on the trial)' : '(read-only)'}`);
 
 
-  // ---------- 1. Roles and asset types through the real builder, each twice ----------
+
   await area('builder', async () => {
     const A = 'builder';
-    const roles = (await list('Roles')).rows;
-    const it = roles.find((r) => /^it agent$/i.test(nameOf(r))) ?? roles.find((r) => !nameOf(r).startsWith('zz ') && !/admin/i.test(nameOf(r)));
     const group = (await list('AssetGroup')).rows.find(own);
-    note(A, 'using', { role: it && nameOf(it), asset_group: group && nameOf(group) });
-    if (it) {
-      const plan = { request: 'Enact learning run 32: a role', steps: [
-        { id: 'src', object: 'role', action: 'reuse', match: { name: nameOf(it) } },
-        { id: 'role', object: 'role', action: 'create', name: 'zz Enact r32 role', based_on_role: 'src' },
-      ] } as unknown as Plan;
-      await prove('role: copy of IT Agent', plan);
-      await prove('role again: nothing duplicated', plan);
-      const made = (await list('Roles')).rows.find((r) => nameOf(r) === 'zz Enact r32 role');
-      const src = await detail('Roles', it.id);
-      const back = made ? await detail('Roles', made.id) : null;
-      const sig = (c: unknown) => JSON.stringify(((c as Row[]) ?? []).map((x) => `${x.type}=${x.value}`).sort());
-      note(A, 'role permissions match IT Agent', back ? sig(back.claims) === sig(src?.claims) : null);
-    }
     if (group) {
-      const plan = { request: 'Enact learning run 32: an asset type', steps: [
+      const plan = { request: 'Enact learning run 33: an asset type with fields', steps: [
         { id: 'grp', object: 'asset_group', action: 'reuse', match: { name: nameOf(group) } },
-        { id: 'at', object: 'asset_type', action: 'create', name: 'zz Enact r32 asset type', asset_group: 'grp' },
+        { id: 'at', object: 'asset_type', action: 'create', name: 'zz Enact r33 asset type', asset_group: 'grp', asset_fields: ['Name', 'Serial Number', 'Model', 'Date Purchased'] },
       ] } as unknown as Plan;
-      await prove('asset type', plan);
-      await prove('asset type again: nothing duplicated', plan);
+      await prove('asset type with fields', plan);
+      await prove('asset type with fields again: nothing duplicated', plan);
+      const at = (await list('AssetType')).rows.find((r) => nameOf(r) === 'zz Enact r33 asset type');
+      note(A, 'asset type fields read back', at ? (((await detail('AssetType', at.id))?.fields as Row[]) ?? []).map((f) => `${f.sequence} ${f.field_name} (${f.field_id})`) : null);
     }
-    // A read-only field, set by the builder.
-    await prove('read-only field', { request: 'Enact learning run 32: read-only', steps: [
-      { id: 'f', object: 'field', action: 'create', name: 'CFzzEnactR32Locked', label: 'zz Enact r32 locked', type: 'text' },
-      { id: 'form', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r31 form' }, set: { add_fields: [{ ref: 'f' }] } },
-      { id: 'lock', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r31 form' }, set: { read_only: ['f'] } },
+    await prove('read-only field (added and locked in one step)', { request: 'Enact learning run 33: read-only', steps: [
+      { id: 'f', object: 'field', action: 'create', name: 'CFzzEnactR33Locked', label: 'zz Enact r33 locked', type: 'text' },
+      { id: 'form', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r31 form' }, set: { add_fields: [{ ref: 'f' }], read_only: ['f'] } },
     ] } as unknown as Plan);
-  });
-
-  // ---------- 2. Fields on an asset type: copy one of Halo's own types' rows onto the zz type ----------
-  await area('asset fields', async () => {
-    const A = 'asset fields';
-    const types = (await list('AssetType')).rows;
-    const srcRow = types.find((t) => own(t) && /laptop/i.test(nameOf(t))) ?? types.find(own);
-    const src = srcRow ? await detail('AssetType', srcRow.id) : null;
-    note(A, 'source fields', ((src?.fields as Row[]) ?? []).map((f) => pick(f, /^(field_id|field_name|sequence|keyfield_id|type|tab_id|techdetail|userdetail)$/)));
-    const info = (await list('AssetTypeInfo')).rows;
-    note(A, 'AssetTypeInfo keys', info[0] ? Object.keys(info[0]) : null);
-    const d1 = info[0] ? await detail('AssetTypeInfo', info[0].id) : null;
-    note(A, 'AssetTypeInfo detail', settings(d1));
-    const zz = types.find((t) => nameOf(t) === 'zz Enact r32 asset type') ?? types.find((t) => nameOf(t) === 'zz Enact r31 asset type');
-    if (!apply || !zz || !src) return;
-    const rows = ((src.fields as Row[]) ?? []).slice(0, 3).map((f) => { const { id: _i, typeinfo_id: _t, ...rest } = f; return rest; });
-    try {
-      await runtime().halo.post('/AssetType', [{ id: zz.id, fields: rows }]);
-      const back = await detail('AssetType', zz.id);
-      const got = ((back?.fields as Row[]) ?? []).map((f) => `${f.field_id} ${f.field_name}`);
-      note(A, 'zz type fields after saving', { sent: rows.map((r) => `${r.field_id} ${r.field_name}`), kept: got });
-      summary.push(`· asset type fields: sent ${rows.length}, now has ${got.length}`);
-    } catch (e) { note(A, 'error', err(e)); summary.push(`✗ asset type fields: ${err(e).slice(0, 160)}`); }
-  });
-
-  // ---------- 3. Mailbox settings (read only: a mailbox is the client's, and connecting one needs their sign-in) ----------
-  await area('mailbox', async () => {
-    const A = 'mailbox';
-    const mb = (await list('Mailbox')).rows.find((r) => Number(r.id) > 0);
-    const d = mb ? await detail('Mailbox', mb.id) : null;
-    note(A, 'settings in use (no secrets)', settings(d));
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
+    const fid = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR33Locked')?.id);
+    const row = tt ? (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === fid) : null;
+    note(A, 'read-only row', row ? pick(row, /^(endusernew|technew|enduserdetail|techdetail)$/) : null);
   });
 
   return { out, summary };

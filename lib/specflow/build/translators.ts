@@ -272,10 +272,11 @@ export const SPIKE_MAP = {
   /** Roles (round 31): POST /Roles { name } made role 87a07edb… (guid id, numeric id_int 12, no id in the reply); its
    *  claims (72) copied from IT Agent were kept exactly. Permissions are copied whole from an existing role, never
    *  edited one claim at a time (the claim codes aren't documented). On after round 32's builder proof. */
-  role: { claims: 'claims' as string | null, builder: null as string | null },
+  role: { claims: 'claims' as string | null, builder: 'built' as string | null }, // round 32: role ccb9d887 built from IT Agent, claims identical, re-run reused it
   /** Asset types (round 31): AssetType { name, assetgroup_id } made type 160, kept; fields come from /AssetTypeInfo
    *  (round 32 tests adding them). */
-  assetType: { group: 'assetgroup_id' as string | null, builder: null as string | null },
+  assetType: { group: 'assetgroup_id' as string | null, builder: 'built' as string | null },
+  assetFields: { rows: 'fields' as string | null, builder: null as string | null }, // round 32: type 161 built + re-run reused; fields rows { field_id, field_name, sequence, type, tab_id, techdetail, userdetail } sent to type 160 were kept (catalogue: /AssetTypeInfo). fields: on after round 33's builder proof
   /** Retire a ticket type (T8, round 29: visible false on type 56, gone from the lists). */
   retire: { key: 'visible' as string | null },
   /** Remove a field from a form (round 28: rows sent without field 312 → gone from type 56). */
@@ -417,7 +418,7 @@ export const FEATURES: Feature[] = [
     key: 'read_only',
     name: 'read-only fields on a form',
     sections: ['readOnly'],
-    prompt: `- A field that should show but not be typed in (e.g. filled in automatically): ticket_type update set: { read_only: [field refs] } (the fields must already be on the form).`,
+    prompt: `- A field that should show but not be typed in (e.g. filled in automatically): ticket_type update set: { read_only: [field refs] }, in the SAME step as the add_fields that puts a new field on the form.`,
   },
   {
     key: 'roles',
@@ -429,7 +430,13 @@ export const FEATURES: Feature[] = [
     key: 'asset_types',
     name: 'asset types',
     sections: ['assetType'],
-    prompt: `- asset_type: create { name, asset_group: ref of a REUSED asset_group step (exact name from inventory.asset_groups) }. Fields on asset types aren't supported yet: list them in unsupported.`,
+    prompt: `- asset_type: create { name, asset_group: ref of a REUSED asset_group step (exact name from inventory.asset_groups) }.`,
+  },
+  {
+    key: 'asset_fields',
+    name: 'fields on asset types',
+    sections: ['assetFields'],
+    prompt: `- asset_type create may have asset_fields: [names from inventory.asset_fields, in order]: the fields shown on that asset type. Only names in that list; any other field goes in unsupported.`,
   },
   {
     key: 'lookup_values',
@@ -526,6 +533,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.set?.read_only?.length) keys.add('read_only');
   if (step.object === 'role' && step.action === 'create') keys.add('roles');
   if (step.object === 'asset_type' || step.object === 'asset_group') keys.add('asset_types');
+  if (step.asset_fields?.length) keys.add('asset_fields');
   if (step.set?.retire) keys.add('retire');
   if (step.set?.remove_fields?.length) keys.add('remove_fields');
   if (step.set?.show_field_when?.length) keys.add('visibility');
@@ -916,6 +924,8 @@ export interface PlanStep {
   /** role: copy permissions from this REUSED role. asset_type: its REUSED asset_group. */
   based_on_role?: string;
   asset_group?: string;
+  /** asset_type: field names from /AssetTypeInfo, in order. Resolved to ids before building (prepare). */
+  asset_fields?: string[];
   /** canned_text: the reply text. lookup_value: the list's lookupid. */
   text?: string;
   list?: number;
@@ -1120,6 +1130,8 @@ export interface Translator {
   findExisting?: (step: PlanStep, refs: Refs) => Promise<Record<string, unknown> | undefined>;
   /** Read a record back when GET /resource/id doesn't (holidays have guid ids). */
   readBack?: (created: Record<string, unknown>, step: PlanStep, refs: Refs) => Promise<Record<string, unknown> | null>;
+  /** Async lookups before build (build itself is synchronous): e.g. asset field names to ids. */
+  prepare?: (step: PlanStep, refs: Refs) => Promise<void>;
   /** Only reuse is supported (create refused with a warning). */
   reuseOnly?: boolean;
 }
@@ -1585,8 +1597,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const key = m.fields as string;
         const rows = (out[key] as Row[]) ?? keepRows(current[key]);
         for (const r of st.read_only) {
-          const row = rows.find((x) => Number(x.fieldid) === Number(refs[r]?.id));
-          if (!row) { warn(`read_only: ${refs[r]?.row?.label ?? r} isn't directly on this form`); continue; }
+          // String compare: a field added in this same step has a placeholder id in the dry run (round 32).
+          const row = rows.find((x) => String(x.fieldid) === String(refs[r]?.id));
+          if (!row) { warn(`read_only: ${refs[r]?.row?.label ?? r} isn't directly on this form (add it in the same step with add_fields)`); continue; }
           for (const k of ro.keys ?? []) row[k] = ro.value;
         }
         out[key] = rows;
@@ -1887,14 +1900,35 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   asset_type: {
-    // Round 31: type 160 from { name, assetgroup_id } kept.
+    // Round 31: type 160 from { name, assetgroup_id } kept. Round 32: fields rows sent in an update were kept, so the
+    // fields go in a follow-up save straight after the create (the shape that was proven).
     resource: 'AssetType',
     template: '',
+    prepare: async (step) => {
+      if (!step.asset_fields?.length) return;
+      const rows = extractList(await runtime().halo.get('/AssetTypeInfo'));
+      const byName = new Map<string, Row>();
+      for (const r of rows) if (!byName.has(String(r.field_name ?? '').trim().toLowerCase())) byName.set(String(r.field_name ?? '').trim().toLowerCase(), r);
+      (step as PlanStep & { _asset_rows?: Row[] })._asset_rows = step.asset_fields.map((n, i) => {
+        const r = byName.get(n.trim().toLowerCase());
+        return r ? { field_id: r.field_id, field_name: r.field_name, sequence: i + 1, type: r.type, tab_id: -1, techdetail: 1, userdetail: 1 } : { _missing: n };
+      });
+    },
     build: (step, refs, warn) => {
       const p: Row = { name: step.name };
       if (!step.asset_group) warn('asset_type: no asset_group');
       set(p, SPIKE_MAP.assetType.group, refs[step.asset_group ?? '']?.id, 'asset group', warn);
+      const rows = (step as PlanStep & { _asset_rows?: Row[] })._asset_rows ?? [];
+      for (const r of rows) if (r._missing) warn(`asset_type: no asset field named "${r._missing}" on this instance`);
+      if (rows.length) p._enact_fields = rows.filter((r) => !r._missing);
       return p;
+    },
+    afterCreate: (id, sent) => ((sent._enact_fields as Row[] | undefined)?.length && SPIKE_MAP.assetFields.rows ? { id, [SPIKE_MAP.assetFields.rows]: sent._enact_fields } : null),
+    verifyCreate: (back, step) => {
+      const want = (step.asset_fields ?? []).map((n) => n.trim().toLowerCase());
+      const got = ((back.fields as Row[]) ?? []).map((f) => String(f.field_name ?? '').trim().toLowerCase());
+      const missing = want.filter((n) => !got.includes(n));
+      return missing.length ? [`asset type is missing fields after saving: ${missing.join(', ')}`] : [];
     },
   },
 
