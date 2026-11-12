@@ -259,6 +259,14 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
         <div className="build-actions" style={{ justifyContent: 'flex-end' }}>
           <button className="btn btn-quiet btn-sm" type="button" onClick={() => { setMode('idle'); setDone(null); }}>Close</button>
         </div>
+      ) : error && !done && (mode === 'preview' || mode === 'apply') ? (
+        // Stopped by hand or cut off: carry on from here. A build again skips the steps already written (U4).
+        <div className="build-actions" style={{ justifyContent: 'flex-end' }}>
+          <button className="btn btn-quiet btn-sm" type="button" onClick={() => { setMode('idle'); setError(''); }}>Close</button>
+          <button className="btn btn-primary btn-sm" type="button" onClick={() => { setError(''); void run(mode); }}>
+            {mode === 'apply' ? 'Carry on building' : 'Preview again'}
+          </button>
+        </div>
       ) : null}
     </div>
   );
