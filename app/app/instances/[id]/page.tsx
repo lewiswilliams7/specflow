@@ -12,11 +12,12 @@ export const preferredRegion = 'lhr1';
 export const maxDuration = 300;
 
 const SUGGESTIONS = [
+  'Build the request forms in the attached design spreadsheet, exactly as written: labels, options, show rules and help text.',
   'New starter form: full name, start date, department and laptop type. Start date and department required. Goes to the Service Desk team, done within 5 working days.',
   'Software requests for 6 or more licences go to 1st Line Support at priority 2, and ask for a business reason only when it’s 6 or more.',
   'Tell everyone in the Service Desk team when a new Software Licensing Request is logged.',
   'Add a stage called Awaiting Equipment to our new starter workflow that pauses the SLA.',
-  'Add a button to software requests that emails the requester to say the software is installed.',
+  'Add a Line Manager field to the New Starter form: a live list of Halo users, with the help text "Select the line manager".',
 ];
 
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
@@ -115,7 +116,7 @@ export default async function InstancePage({ params, searchParams }: { params: P
         inventoryAt={inst.inventory_at ?? null}
         instanceId={inst.id}
         turns={[]}
-        placeholder="Describe the form, fields, approvals, stages and targets you need"
+        placeholder="Describe what you need, paste the requirements, or attach the design spreadsheet"
         start={{
           heading: `What do you need built in ${inst.name}?`,
           suggestions: SUGGESTIONS,

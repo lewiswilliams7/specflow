@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { IconChat, IconServer } from '@/components/icons';
+import { IconChat, IconCheck, IconServer } from '@/components/icons';
 import { getContext } from '@/lib/workspace';
 
 // Run next to Halo UK instances and the Supabase project (London).
@@ -15,15 +15,45 @@ export default async function Overview() {
     supabase.from('threads').select('id, title, updated_at, instances(name)').eq('workspace_id', workspace.id).order('updated_at', { ascending: false }).limit(8),
   ]);
   const full = limits.instances !== null && (instances?.length ?? 0) >= limits.instances;
+  const ready = instances?.find((i) => i.status === 'connected' && i.inventory_at) ?? null;
+  const first = instances?.[0] ?? null;
+  // The one next thing to do, so a new account never has to work out where to start.
+  const steps = [
+    { done: !!instances?.length, title: 'Connect a Halo instance', text: 'A test or trial instance is the best place to start.', href: '/app/instances/new', cta: 'Connect' },
+    { done: !!ready, title: 'Read its configuration', text: 'Ticket types, fields, approvals, SLAs, workflows and teams. Never tickets.', href: first ? `/app/instances/${first.id}` : '', cta: 'Read it' },
+    { done: !!recent?.length, title: 'Describe what you need', text: 'Type the brief, paste requirements or attach the form design spreadsheet.', href: ready ? `/app/instances/${ready.id}` : '', cta: 'Start' },
+  ];
+  const next = steps.findIndex((st) => !st.done);
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h1>Overview</h1>
-          <p>Connect a Halo instance, read its configuration, then describe what you need.</p>
+          <p>Describe what you need, review the plan, then build it in Halo.</p>
         </div>
+        {ready ? <Link className="btn btn-primary" href={`/app/instances/${ready.id}`}>New conversation</Link> : null}
       </div>
+
+      {next >= 0 ? (
+        <section className="card" aria-labelledby="start-h">
+          <div className="card-head"><div><h2 id="start-h">Get started</h2><p>Three steps to your first plan. Nothing is written to Halo until you approve a build.</p></div></div>
+          <div className="card-body">
+            <ol className="steps-inline">
+              {steps.map((st, i) => (
+                <li key={st.title} className={`mini-step${st.done ? ' done' : i === next ? ' now' : ''}`}>
+                  <span className="n">{st.done ? <IconCheck size={14} /> : i + 1}</span>
+                  <div className="grow">
+                    <b>{st.title}</b>
+                    <span>{st.text}</span>
+                  </div>
+                  {i === next && st.href ? <Link className="btn btn-primary btn-sm" href={st.href}>{st.cta}</Link> : null}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+      ) : null}
 
       <section className="card" aria-labelledby="instances-h">
         <div className="card-head">

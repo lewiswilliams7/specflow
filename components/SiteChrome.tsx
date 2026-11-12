@@ -23,6 +23,7 @@ export function SiteHeader() {
         <Brand />
         <nav className="site-nav" aria-label="Main">
           <Link className="hide-sm" href="/#partners">For partners</Link>
+          <Link className="hide-sm" href="/#how">How it works</Link>
           <Link className="hide-sm" href="/example">Example</Link>
           <Link className="hide-sm" href="/#safety">Safety</Link>
           <Link href="/pricing">Pricing</Link>

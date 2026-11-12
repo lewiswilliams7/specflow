@@ -12,18 +12,18 @@ export default function Home() {
         <section className="hero">
           <div className="wrap">
             <div>
-              <span className="eyebrow">For Halo consultants and admins</span>
-              <h1>Write the brief. Approve the plan. {site.name} builds it in Halo.</h1>
+              <span className="eyebrow">For Halo partners and consultants</span>
+              <h1>Your client&apos;s design, built in their Halo.</h1>
               <p className="lede">
-                Forms, approvals, SLAs, workflows, ticket rules, notifications and emails, from a brief in plain English.
-                {' '}{site.name} reads the instance first and reuses what&apos;s there. It shows every change before writing,
-                then checks each one after. You spend your days on the design, not clicking through configuration screens.
+                Paste the brief or attach the form design spreadsheet. {site.name} reads the client&apos;s instance, plans every
+                ticket type, field, approval, SLA and workflow, and builds it once you approve. You keep the workshops and the
+                judgement. {site.name} does the clicking.
               </p>
               <div className="cta-row">
                 <a className="btn btn-primary btn-lg" href="/signup">Start free</a>
                 <a className="btn btn-secondary btn-lg" href="/example">See a real plan</a>
               </div>
-              <p className="fineprint">Free to connect and generate plans. Building starts with our partner pilots in {site.pilotStart}. <a href="#pilot">Apply for a pilot</a></p>
+              <p className="fineprint">Free to connect a test instance and generate plans. Partner pilots start in {site.pilotStart}. <a href="#pilot">Apply for a pilot</a></p>
             </div>
             <PlanPanel />
           </div>
@@ -31,42 +31,97 @@ export default function Home() {
 
         <section className="section proof" aria-label="What we've proven">
           <div className="wrap">
+            {site.liveProof ? (
+              <div>
+                <strong>{site.liveProof.forms} forms</strong>
+                <span>{site.liveProof.note}.</span>
+              </div>
+            ) : null}
             <div>
               <strong>{site.proof.objectsInOneRun} objects</strong>
               <span>Built and checked in one run on a Halo test instance: a full joiners, movers and leavers setup. <a href="/example">See the plan</a></span>
             </div>
             <div>
               <strong>{site.proof.rules} rules</strong>
-              <span>Halo quirks we&apos;ve found and fixed, so they never reach your instance. The list grows with every build.</span>
+              <span>Halo quirks we&apos;ve found and fixed, so they never reach a client&apos;s instance.</span>
             </div>
             <div>
               <strong>{site.proof.deletes} deletes</strong>
-              <span>{site.name} never deletes anything in Halo. It creates, reuses and updates, and tells you what it can&apos;t do.</span>
+              <span>{site.name} creates, reuses and updates. It has no way to delete anything in Halo.</span>
+            </div>
+            <div>
+              <strong>Every change</strong>
+              <span>Read back from Halo after it&apos;s saved and compared with what was sent. A mismatch stops the build.</span>
             </div>
           </div>
         </section>
 
-        <section className="section partners" id="partners">
+        <section className="section" id="partners">
           <div className="wrap">
             <div className="section-head">
               <span className="eyebrow">For Halo partners</span>
-              <h2>Your standard build, on every new client</h2>
-              <p>Most implementations start with the same groundwork. {site.name} does the clicking, so a fixed-price build takes less of your team&apos;s time and every day you save is margin.</p>
-              <ul className="ticks">
-                <li><b>Matched to each client.</b> It reads their teams, agents, priorities and existing setup, and reuses what fits.</li>
-                <li><b>In the client&apos;s brand.</b> Email templates and sign-off reports carry the client&apos;s logo, colour and footer. You see each email before it&apos;s built.</li>
-                <li><b>Something to hand over.</b> Every build has a sign-off report: who ran it, every record with its Halo ID, ready to print or save as a PDF.</li>
-              </ul>
+              <h2>Implementation days go on design, not data entry</h2>
+              <p>On a fixed-price build, every hour spent clicking through configuration screens comes out of your margin. {site.name} takes that part.</p>
             </div>
-            <div className="card pack">
-              <h3>A build pack, applied to a new client</h3>
-              <ol>
-                <li>Pick your firm&apos;s standard pack: service request forms, approvals, SLAs.</li>
-                <li>{site.name} matches it to the client&apos;s teams, agents and priorities.</li>
-                <li>You review the plan with the client, then build.</li>
-                <li>The sign-off report goes straight into your project file.</li>
-              </ol>
-              <span className="badge accent">Build packs are part of the pilot</span>
+            <div className="value-grid">
+              <article className="card value">
+                <h3>Keeps fixed-price builds profitable</h3>
+                <p>Agree the design with the client, then let {site.name} build it. Your consultant reviews the plan and checks the result instead of creating fields one by one.</p>
+              </article>
+              <article className="card value">
+                <h3>The same standard on every client</h3>
+                <p>{site.name} follows {site.proof.rules} rules on every build, whoever runs it. New consultants build the way your best one does, and the quirks stay fixed.</p>
+              </article>
+              <article className="card value">
+                <h3>Something for the client to sign</h3>
+                <p>The plan shows what exists, what will be built and what&apos;s left for you. Every build ends with a sign-off report listing each record by Halo ID, in the client&apos;s brand.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section className="section" id="design-sheet">
+          <div className="wrap">
+            <div className="split">
+              <div className="section-head">
+                <span className="eyebrow">New: attach the design</span>
+                <h2>Send the form design spreadsheet. Get the build plan.</h2>
+                <p>
+                  Attach the request form design you agreed with the client. {site.name} reads it in code, row by row, so every
+                  label, option, show rule and line of help text goes into the plan exactly as written. It plans each form on
+                  its own, then checks the whole plan against the client&apos;s instance.
+                </p>
+                <ul className="ticks">
+                  <li><b>Word for word.</b> Labels, options and help text come from the sheet, not from a summary of it.</li>
+                  <li><b>Nothing invented.</b> A list with no values written, or a type it can&apos;t build, is listed as yours to do.</li>
+                  <li><b>Reuses what&apos;s there.</b> A field the client already has, with the same type, is reused, never renamed.</li>
+                </ul>
+              </div>
+              <div className="sheet-demo" aria-label="Example: a design sheet row becomes plan steps">
+                <div className="sheet">
+                  <div className="sheet-bar"><span>request-forms-design.xlsx</span></div>
+                  <table>
+                    <thead><tr><th>Field</th><th>Type</th><th>Required?</th><th>Help text</th></tr></thead>
+                    <tbody>
+                      <tr><td>Start Date</td><td>Date</td><td>Yes</td><td>Required start date</td></tr>
+                      <tr><td>Line Manager</td><td>User lookup</td><td>Yes</td><td>Select the line manager</td></tr>
+                      <tr><td>Equipment</td><td>Single selection</td><td>No</td><td>Select what&apos;s needed</td></tr>
+                      <tr><td>Other Details</td><td>Memo</td><td>If shown</td><td>Shown if Other is picked</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="plan-card">
+                  <div className="plan-section">
+                    <h3>Plan for New Starter Request</h3>
+                    <ul className="diff">
+                      <li className="keep"><span className="sign">=</span><div className="what"><b>Start Date</b> <span className="kind">already there</span><p>Reused, with its help text added</p></div></li>
+                      <li className="add"><span className="sign">+</span><div className="what"><b>Line Manager</b> <span className="kind">new field</span><p>A live list of Halo users</p></div></li>
+                      <li className="add"><span className="sign">+</span><div className="what"><b>Other Details</b> <span className="kind">new field</span><p>Shown only when Other is picked</p></div></li>
+                      <li className="cant"><span className="sign">!</span><div className="what"><b>Portal category</b> <span className="kind">yours to do</span><p>Listed for you to set in the portal</p></div></li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -80,11 +135,11 @@ export default function Home() {
             <ol className="steps">
               <li>
                 <h3>Connect</h3>
-                <p>Add a Halo API application with the permissions we list. {site.name} reads your configuration, never your tickets.</p>
+                <p>Add a Halo API application with the permissions we list. {site.name} reads the configuration, never tickets.</p>
               </li>
               <li>
                 <h3>Describe</h3>
-                <p>Write what you need the way you&apos;d explain it to a colleague. If something is unclear, {site.name} asks before it plans.</p>
+                <p>Write it the way you&apos;d brief a colleague, paste the client&apos;s requirements, or attach the design spreadsheet. If a decision is yours, {site.name} asks with one-click answers.</p>
               </li>
               <li>
                 <h3>Review</h3>
@@ -169,6 +224,8 @@ export default function Home() {
                   <li>Workflow stages, actions and statuses that pause the SLA</li>
                   <li>Teams and approval groups, with members</li>
                   <li>Fields that only show for certain answers</li>
+                  <li>Help text on every field <span>word for word from the design</span></li>
+                  <li>Live dropdowns of Halo users, sites or organisations <span>made from a list field the instance already has</span></li>
                   <li>Ticket rules <span>routing and priority based on the ticket type and answers</span></li>
                   <li>Email templates in the client&apos;s brand <span>logo, colour, footer and Halo&apos;s own variables</span></li>
                   <li>Action buttons that email the requester <span>including when they move the ticket to a new status</span></li>
@@ -176,6 +233,7 @@ export default function Home() {
                   <li>Child tickets raised when a ticket is logged</li>
                   <li>Categories, and ticket rules that set them</li>
                   <li>Agent notifications for a team, scoped to a ticket type</li>
+                  <li>Form design spreadsheets and long briefs <span>planned form by form, then checked as one plan</span></li>
                   <li>Sign-off reports for every build <span>print or save as a PDF</span></li>
                 </ul>
               </div>
@@ -184,8 +242,11 @@ export default function Home() {
                 <ul>
                   <li>Emails when a rule or an approval changes the status</li>
                   <li>Child tickets raised in order or after approval</li>
-                  <li>Roles and permissions</li>
-                  <li>Portal and service catalogue, reports, runbooks</li>
+                  <li>Fields shown by a multi-select answer</li>
+                  <li>Services and the self-service portal catalogue</li>
+                  <li>Mailbox and email-to-ticket rules</li>
+                  <li>Retiring old ticket types or removing fields <span>{site.name} never deletes</span></li>
+                  <li>Roles and permissions, reports, runbooks</li>
                 </ul>
               </div>
             </div>
@@ -215,6 +276,10 @@ export default function Home() {
             </div>
             <div className="faq">
               <details>
+                <summary>Can it read our request form design template?</summary>
+                <p>Yes. Attach the spreadsheet to a message. {site.name} reads the form name, fields, types, mandatory flags, options, show rules and help text in code, so nothing is paraphrased. Anything it can&apos;t build, such as attachments or tables on a form, is listed for you.</p>
+              </details>
+              <details>
                 <summary>What does {site.name} read in Halo?</summary>
                 <p>Configuration only: ticket types, fields and forms, approvals, SLAs, workflows, statuses, teams, agents, rules, templates and categories. It never reads tickets or their contents.</p>
               </details>
@@ -242,6 +307,10 @@ export default function Home() {
                 <summary>Does it replace the consultant?</summary>
                 <p>No. It replaces the clicking. The design, the workshops and the judgement stay with you, and anything it can&apos;t build is listed in the plan as yours to do.</p>
               </details>
+              <details>
+                <summary>Is {site.name} made by Halo?</summary>
+                <p>No. {site.name} is independent and works through Halo&apos;s public API, with an API application you create and can switch off at any time.</p>
+              </details>
             </div>
           </div>
         </section>
@@ -250,7 +319,7 @@ export default function Home() {
           <div className="wrap">
             <div className="section-head">
               <h2>Apply for a pilot</h2>
-              <p>We&apos;re working with a small number of Halo partners from {site.pilotStart}. Pilots run on new or test instances, and we build alongside you.</p>
+              <p>We&apos;re taking a small number of Halo partners from {site.pilotStart}. Bring a real client design; we build it with you on a test instance first.</p>
               <ul>
                 <li>You bring real client requests; we build them with you.</li>
                 <li>Paid per build during the pilot, agreed upfront.</li>

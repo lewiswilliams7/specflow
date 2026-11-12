@@ -549,3 +549,25 @@ textarea { resize: vertical; min-height: 96px; }
 .ask-q { display: grid; gap: 4px; }
 .ask-q textarea { width: 100%; resize: vertical; min-height: 32px; padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
 .ask-foot { display: flex; justify-content: space-between; align-items: center; }
+
+/* Homepage refresh (Nov 2026): partner value cards, design sheet demo, wider proof strip */
+@media (min-width: 760px) { .proof .wrap { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 32px; } }
+.value-grid { display: grid; gap: 14px; margin-top: 32px; }
+@media (min-width: 860px) { .value-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.value { padding: 22px; display: grid; gap: 8px; align-content: start; border-top: 3px solid var(--brand); }
+.value h3 { font-size: 16.5px; letter-spacing: -0.01em; }
+.value p { color: var(--ink-2); font-size: 14.5px; }
+#design-sheet { background: var(--surface); }
+.sheet-demo { display: grid; gap: 14px; min-width: 0; }
+.sheet { border: 1px solid var(--line); border-radius: var(--r-l); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-pop); }
+.sheet-bar { padding: 9px 14px; background: var(--add-soft); color: var(--add); font: 500 12.5px/1.2 var(--mono); border-bottom: 1px solid var(--line); }
+.sheet table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.sheet th, .sheet td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); overflow-wrap: anywhere; vertical-align: top; }
+.sheet th { background: var(--surface-2); color: var(--ink-2); font-weight: 600; font-size: 12px; }
+.sheet tr:last-child td { border-bottom: 0; }
+.sheet th:last-child, .sheet td:last-child { border-right: 0; }
+.sheet-demo .plan-card { box-shadow: var(--shadow-pop); }
+.steps-inline { list-style: none; padding: 0; margin: 0; }
+.steps-inline .mini-step { align-items: flex-start; }
+.mini-step .grow { flex: 1; min-width: 0; }
+@media (max-width: 480px) { .sheet table { font-size: 12px; } .sheet th, .sheet td { padding: 7px 6px; overflow-wrap: normal; hyphens: auto; } }
