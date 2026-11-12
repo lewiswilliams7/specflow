@@ -143,16 +143,27 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
           let planned = 0;
           const n = split.forms.length;
           setPending((p) => (p ? { ...p, stage: 'planning', detail: `${n} parts, all at once` } : p));
+          type PartResult = { error?: string; title?: string; plan?: unknown; errors?: string[]; seal?: string };
+          const ask = async (index: number, fix?: PartResult) => {
+            const r = await fetch('/api/plan-part', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ message: text, instance_id: instanceId, index, fix: fix ? { plan: fix.plan, errors: fix.errors, seal: fix.seal } : undefined }),
+              signal: ctrl.signal,
+            });
+            const body = (await r.json().catch(() => ({}))) as PartResult;
+            if (!r.ok) throw new Error(body.error ?? `Planning part ${index + 1} failed (${r.status}). Try again.`);
+            return body;
+          };
           parts = await Promise.all(
             split.forms.map(async (_, index) => {
-              const r = await fetch('/api/plan-part', {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ message: text, instance_id: instanceId, index }),
-                signal: ctrl.signal,
-              });
-              const body = (await r.json().catch(() => ({}))) as { error?: string };
-              if (!r.ok) throw new Error(body.error ?? `Planning part ${index + 1} failed (${r.status}). Try again.`);
+              let body = await ask(index);
+              // A part with problems gets one more pass on its own before the parts are merged.
+              if (body.plan && body.errors?.length) {
+                setPending((p) => (p ? { ...p, stage: 'checking', detail: `fixing part ${index + 1}` } : p));
+                const fixed = await ask(index, body).catch(() => null);
+                if (fixed?.plan && (fixed.errors?.length ?? 0) < body.errors.length) body = fixed;
+              }
               planned++;
               setPending((p) => (p ? { ...p, stage: 'planning', detail: `${planned} of ${n} parts planned` } : p));
               return body;

@@ -111,6 +111,7 @@ ${readyFeaturePrompt()}
   - An approval that should only happen for some answers of a dropdown is a rules stage (P7): {"rules": [{"field", "equals", "group" or "agent"}]}, and the process IS attached to the ticket type (the rules stage approves itself when no rule matches). Conditions on anything other than a dropdown's answer (a number, text, a date) can't be built: capture a band dropdown (M5), or if that's not possible, do NOT attach the approval, list it in unsupported, and only attach an approval that must run on every ticket, saying so in an assumption starting "Every ticket of this type is approved by". (M6)
   - Questions (M7): at most 4 on the first plan, at most 2 on a follow-up, and only for decisions that change what gets built and that the inventory can't answer. Never ask the user to confirm a name or detail they gave you. Never ask again something already asked in the conversation: use their answer. If they leave a choice to you ("either", "up to you", "don't mind"), choose the option that changes the least on their instance, state your choice in assumptions, and don't ask again. Still plan the rest.
   - Least change (M9): a field asked for on a NEW form goes directly on that form (ticket_type "fields"), not into a section other ticket types share. Change a shared section only when the user wants the field on every form that uses it.
+  - A field, section or ticket type you REUSE stays as it is: never rename it or change its label, options or type unless the request explicitly asks to change that one (it is used on other forms too).
   - Mandatory: inventory.details marks mandatory fields with *. Never ask whether to make a field mandatory when it already is. A field inside a section is mandatory on every form that uses that section; to make it mandatory on one form only, place it directly on that form.
   - Names: if you name something differently from the user's own words, say the name you chose in reply.
   - Write every text for the customer (reply, existing_coverage, unsupported, assumptions, questions) in plain English with field LABELS (inventory.details.custom_fields), never internal names like CFhardware.
@@ -155,7 +156,11 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       // A new field whose label means the same as an existing field's label is a duplicate (CFEmergencyReason vs CFemergencyChangeReason).
       if (s.object === 'field' && s.action === 'create' && s.label) {
         const stem = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w.replace(/(ing|ed|s)$/, '')).join(' ');
-        const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!));
+        // Only the same kind of field is a duplicate: a text field doesn't stand in for a dropdown, nor a fixed list
+        // for a live one (11 Nov: forcing that reuse put a text "Department" where a list was asked for).
+        const kind = (d: string) => `${d.match(/^"[^"]*"\s+(\w+)/)?.[1] ?? ''}${/\[dynamic list\]/.test(d) ? ':dynamic' : ''}`;
+        const want = `${s.type === 'dropdown' ? 'dropdown' : s.type}${s.dynamic ? ':dynamic' : ''}`;
+        const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!) && kind(String(d)) === want);
         // F12: a dynamic field that replaces the old one on forms keeps the old one's label on purpose.
         const swapsIn = Boolean(s.dynamic) && plan.steps.some((x) => (x.set?.replace_fields ?? []).some((r) => r.new === s.id));
         if (hit && !swapsIn) errors.push(`${where}: field "${hit[0]}" already exists with the label "${s.label}": reuse it`);
@@ -375,9 +380,15 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
   const merged: PlanStep[] = [];
   const placed = new Set<string>();
   const ids = new Set(deduped.map((s) => s.id));
+  // An update or reuse that names something created in this plan (match.name) comes after that create.
+  const createdBy = new Map(deduped.filter((s) => s.action === 'create' && s.name).map((s) => [`${s.object}:${s.name!.toLowerCase()}`, s.id] as [string, string]));
+  const needs = (s: PlanStep) => {
+    const byName = s.action !== 'create' && s.match?.name ? createdBy.get(`${s.object}:${String(s.match.name).toLowerCase()}`) : undefined;
+    return [...refsOf(s), ...(byName ? [byName] : [])];
+  };
   const pending = [...deduped];
   while (pending.length) {
-    const i = pending.findIndex((s) => refsOf(s).every((r) => !ids.has(r) || placed.has(r) || r === s.id));
+    const i = pending.findIndex((s) => needs(s).every((r) => !ids.has(r) || placed.has(r) || r === s.id));
     const [next] = pending.splice(i < 0 ? 0 : i, 1); // a cycle can't be ordered: keep it and let the checks say so
     merged.push(next);
     placed.add(next.id);
