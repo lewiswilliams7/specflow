@@ -56,6 +56,8 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   canned_text: (inventory as unknown as { canned_text?: string[] }).canned_text ?? [],
   kb_article: (inventory as unknown as { kb_articles?: string[] }).kb_articles ?? [],
   faq_list: (inventory as unknown as { faq_lists?: string[] }).faq_lists ?? [],
+  role: (inventory as unknown as { roles?: string[] }).roles ?? [],
+  asset_type: (inventory as unknown as { asset_types?: string[] }).asset_types ?? [],
 };
 
   // Names of the same kind of object: "Payroll" the category isn't "Payroll" the ticket type (11 Nov: a plan updated a
@@ -151,7 +153,7 @@ ${who}${convo}${prev}${asked}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST
 ${request}
 ${ctx.previous ? REVISE : ''}${extra}`;
 
-  const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification', 'service', 'service_category', 'user', 'site', 'organisation', 'working_hours', 'holiday', 'canned_text', 'lookup_value', 'kb_article', 'faq_list']);
+  const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification', 'service', 'service_category', 'user', 'site', 'organisation', 'working_hours', 'holiday', 'canned_text', 'lookup_value', 'kb_article', 'faq_list', 'role', 'asset_type', 'asset_group']);
   function validate(plan: Plan): string[] {
     const errors: string[] = [];
     if (!Array.isArray(plan.steps)) return ['"steps" must be an array'];

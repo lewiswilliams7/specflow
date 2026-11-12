@@ -240,7 +240,9 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         attempted = [payload];
         // Builder-only notes never go to Halo: _restore_tab_display (T7) and anything starting _enact (N4).
         const toSend = Object.fromEntries(Object.entries(payload).filter(([k]) => k !== '_restore_tab_display' && !k.startsWith('_enact')));
-        const created = firstRecord(await halo.post(`/${t.resource}`, [toSend]));
+        let created = firstRecord(await halo.post(`/${t.resource}`, [toSend]));
+        // Some records answer without their id (roles: guid ids, round 31). Find them the same way a re-run would.
+        if (!created?.id && t.findExisting) created = (await t.findExisting(step, refs)) ?? created;
         if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
         refs[step.id] = { id: created.id as number, name: expectedName, label: step.label };
 

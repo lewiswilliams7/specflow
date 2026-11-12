@@ -12,7 +12,7 @@ const OBJECT: Record<PlanStep['object'], string> = {
   team: 'team', field: 'field', sla: 'SLA', approval_process: 'approval process', ticket_type: 'ticket type', status: 'status',
   outcome: 'action', workflow: 'workflow', agent: 'agent', approval_group: 'approval group', field_group: 'form section',
   email_template: 'email template', ticket_rule: 'ticket rule', ticket_template: 'child ticket template', category: 'category', notification: 'agent notification',
-  service: 'service', service_category: 'service category', user: 'user', site: 'site', organisation: 'organisation', working_hours: 'working hours', holiday: 'bank holiday', canned_text: 'canned text', lookup_value: 'list value', kb_article: 'knowledge base article', faq_list: 'FAQ list',
+  service: 'service', service_category: 'service category', user: 'user', site: 'site', organisation: 'organisation', working_hours: 'working hours', holiday: 'bank holiday', canned_text: 'canned text', lookup_value: 'list value', kb_article: 'knowledge base article', faq_list: 'FAQ list', role: 'role', asset_type: 'asset type', asset_group: 'asset group',
 };
 
 /** "CFhardware" → "Hardware" (its label on this instance), falling back to the name. */
@@ -130,6 +130,12 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
       case 'kb_article':
         out.push(`New article in ${ref(step.faq_list)}: "${String(step.body ?? '').slice(0, 80)}${String(step.body ?? '').length > 80 ? '…' : ''}"`);
         break;
+      case 'role':
+        out.push(`New role with the same permissions as ${ref(step.based_on_role)}`);
+        break;
+      case 'asset_type':
+        out.push(`New asset type in ${ref(step.asset_group)}`);
+        break;
       case 'canned_text':
         out.push(`New canned text: "${String(step.text ?? '').slice(0, 80)}${String(step.text ?? '').length > 80 ? '…' : ''}"`);
         break;
@@ -148,6 +154,7 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
 
   // update
   const st = step.set ?? {};
+  for (const f of st.read_only ?? []) out.push(`make ${ref(f)} read-only`);
   if (st.retire) out.push('retire it (hidden from lists and the portal; nothing deleted)');
   for (const f of st.remove_fields ?? []) out.push(`take ${ref(f)} off the form (the field stays in Halo)`);
   if (st.summary !== undefined) out.push(`summary "${st.summary}"`);

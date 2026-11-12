@@ -223,7 +223,7 @@ export default function Home() {
                   <li>SLAs, with targets per priority</li>
                   <li>Workflow stages, actions and statuses that pause the SLA</li>
                   <li>Teams and approval groups, with members</li>
-                  <li>Fields that only show for certain answers</li>
+                  <li>Fields that only show for certain answers <span>and are required only when shown</span></li>
                   <li>Help text on every field <span>word for word from the design</span></li>
                   <li>Live dropdowns of Halo users, sites or organisations <span>made from a list field the instance already has</span></li>
                   <li>Ticket rules <span>routing and priority based on the ticket type and answers</span></li>
@@ -236,6 +236,7 @@ export default function Home() {
                   <li>Services in the portal catalogue <span>with their summary and the ticket type they log</span></li>
                   <li>Users, sites and organisations from a list <span>matched on email and name, so a re-run never duplicates</span></li>
                   <li>Working hours and bank holidays</li>
+                  <li>Knowledge base articles <span>in the FAQ list you name</span></li>
                   <li>Canned text, and values in Halo&apos;s own lists <span>impact, urgency, risk and similar</span></li>
                   <li>Retiring old ticket types and taking fields off forms <span>hidden, never deleted</span></li>
                   <li>Form design spreadsheets and long briefs <span>planned form by form, then checked as one plan</span></li>
@@ -248,7 +249,7 @@ export default function Home() {
                   <li>Emails when a rule or an approval changes the status</li>
                   <li>Child tickets raised in order or after approval</li>
                   <li>Mailbox and email-to-ticket rules</li>
-                  <li>Roles and permissions, asset types, knowledge base articles</li>
+                  <li>Roles and permissions, asset types and their fields</li>
                   <li>Reports, dashboards, runbooks</li>
                 </ul>
               </div>

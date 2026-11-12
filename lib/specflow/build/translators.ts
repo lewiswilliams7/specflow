@@ -265,7 +265,17 @@ export const SPIKE_MAP = {
   lookupList: { names: 'lookupid 11' as string | null }, // round 30: list 11's row ids are the other lists' lookupids (12 Impact Level, 13 Risk Of Failure Level, 27 Urgency Level ...)
   /** Knowledge base (round 30: article 47 from { name, description, faqlists: [{ id }] } kept). Halo refuses an article
    *  without an FAQ list ("You must select an FAQ list", round 28). On once round 31 builds one with the builder. */
-  kb: { faqLists: 'faqlists' as string | null, builder: null as string | null },
+  kb: { faqLists: 'faqlists' as string | null, builder: 'built' as string | null }, // round 31: article 48 built, re-run reused it
+  /** Read-only on a form (round 31): the row's endusernew, technew, enduserdetail, techdetail set to 2 were kept (type 58,
+   *  field 315); Halo's own forms use techdetail 2. On once Lewis sees the field locked in Halo's screens. */
+  readOnly: { value: 2 as number | null, keys: ['endusernew', 'technew', 'enduserdetail', 'techdetail'] as string[] | null, seenInHalo: null as string | null },
+  /** Roles (round 31): POST /Roles { name } made role 87a07edb… (guid id, numeric id_int 12, no id in the reply); its
+   *  claims (72) copied from IT Agent were kept exactly. Permissions are copied whole from an existing role, never
+   *  edited one claim at a time (the claim codes aren't documented). On after round 32's builder proof. */
+  role: { claims: 'claims' as string | null, builder: null as string | null },
+  /** Asset types (round 31): AssetType { name, assetgroup_id } made type 160, kept; fields come from /AssetTypeInfo
+   *  (round 32 tests adding them). */
+  assetType: { group: 'assetgroup_id' as string | null, builder: null as string | null },
   /** Retire a ticket type (T8, round 29: visible false on type 56, gone from the lists). */
   retire: { key: 'visible' as string | null },
   /** Remove a field from a form (round 28: rows sent without field 312 → gone from type 56). */
@@ -404,6 +414,24 @@ export const FEATURES: Feature[] = [
     prompt: `- kb_article: create { name (the article title), body (the article in plain words, paragraphs separated by \n\n), faq_list: ref of a REUSED faq_list step (exact name from inventory.faq_lists) }. Write only what the brief or an attached document says; never invent steps or facts. Reuse an article already in inventory.kb_articles.`,
   },
   {
+    key: 'read_only',
+    name: 'read-only fields on a form',
+    sections: ['readOnly'],
+    prompt: `- A field that should show but not be typed in (e.g. filled in automatically): ticket_type update set: { read_only: [field refs] } (the fields must already be on the form).`,
+  },
+  {
+    key: 'roles',
+    name: 'agent roles',
+    sections: ['role'],
+    prompt: `- role (agent permissions): create { name, based_on_role: ref of a REUSED role step (exact name from inventory.roles) }: the new role gets exactly the permissions of that role. Enact can't change single permissions: name any differences in unsupported.`,
+  },
+  {
+    key: 'asset_types',
+    name: 'asset types',
+    sections: ['assetType'],
+    prompt: `- asset_type: create { name, asset_group: ref of a REUSED asset_group step (exact name from inventory.asset_groups) }. Fields on asset types aren't supported yet: list them in unsupported.`,
+  },
+  {
     key: 'lookup_values',
     name: 'values in Halo\'s own lists (closure codes, asset statuses, risk levels)',
     sections: ['lookupList', 'builderProof'],
@@ -495,6 +523,9 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'canned_text') keys.add('canned_text');
   if (step.object === 'lookup_value') keys.add('lookup_values');
   if (step.object === 'kb_article' || step.object === 'faq_list') keys.add('kb_articles');
+  if (step.set?.read_only?.length) keys.add('read_only');
+  if (step.object === 'role' && step.action === 'create') keys.add('roles');
+  if (step.object === 'asset_type' || step.object === 'asset_group') keys.add('asset_types');
   if (step.set?.retire) keys.add('retire');
   if (step.set?.remove_fields?.length) keys.add('remove_fields');
   if (step.set?.show_field_when?.length) keys.add('visibility');
@@ -856,7 +887,7 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification' | 'service' | 'service_category' | 'user' | 'site' | 'organisation' | 'working_hours' | 'holiday' | 'canned_text' | 'lookup_value' | 'kb_article' | 'faq_list';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification' | 'service' | 'service_category' | 'user' | 'site' | 'organisation' | 'working_hours' | 'holiday' | 'canned_text' | 'lookup_value' | 'kb_article' | 'faq_list' | 'role' | 'asset_type' | 'asset_group';
   action: 'create' | 'reuse' | 'update';
   name?: string;
   /** email_template: the workspace's branding (rule EM1). Added by the app or the run, never by the planner. */
@@ -882,6 +913,9 @@ export interface PlanStep {
   working_hours?: string;
   /** kb_article: its faq_list ref (the article text is body). */
   faq_list?: string;
+  /** role: copy permissions from this REUSED role. asset_type: its REUSED asset_group. */
+  based_on_role?: string;
+  asset_group?: string;
   /** canned_text: the reply text. lookup_value: the list's lookupid. */
   text?: string;
   list?: number;
@@ -962,6 +996,8 @@ export interface PlanStep {
     show_field_when?: FieldCondition[];
     /** ticket_type: ref of an email_template step, emailed to the requester when a ticket is logged (EM4). */
     acknowledgement_email?: string;
+    /** ticket_type: these fields show but can't be typed in (round 31). */
+    read_only?: string[];
     /** ticket_type: retire it (T8: visible false). Never deleted. */
     retire?: boolean;
     /** ticket_type / field_group: take these fields off the form (the fields stay in Halo). */
@@ -1544,6 +1580,17 @@ export const translators: Record<PlanStep['object'], Translator> = {
         else if (Number(current[key]) !== Number(id)) out[key] = id;
       }
       if (st.retire && SPIKE_MAP.retire.key) out[SPIKE_MAP.retire.key] = false; // rule T8
+      if (st.read_only?.length) {
+        const ro = SPIKE_MAP.readOnly;
+        const key = m.fields as string;
+        const rows = (out[key] as Row[]) ?? keepRows(current[key]);
+        for (const r of st.read_only) {
+          const row = rows.find((x) => Number(x.fieldid) === Number(refs[r]?.id));
+          if (!row) { warn(`read_only: ${refs[r]?.row?.label ?? r} isn't directly on this form`); continue; }
+          for (const k of ro.keys ?? []) row[k] = ro.value;
+        }
+        out[key] = rows;
+      }
       if (st.remove_fields?.length) {
         const key = m.fields as string;
         const rows = (out[key] as Row[]) ?? keepRows(current[key]);
@@ -1809,6 +1856,45 @@ export const translators: Record<PlanStep['object'], Translator> = {
     verifyCreate: (back, step) => {
       const lists = ((back.faqlists as Row[]) ?? []).map((f) => Number(f.id));
       return step.faq_list && !lists.length ? ['the article has no FAQ list after saving'] : [];
+    },
+  },
+
+  role: {
+    // Round 31: POST /Roles { name } answers without an id (guid ids; id_int is the number), so it's found by name.
+    resource: 'Roles',
+    template: '',
+    findExisting: async (step) => extractList(await runtime().halo.get('/Roles')).find((r) => String(r.name ?? '').trim().toLowerCase() === String(step.name ?? '').trim().toLowerCase()),
+    build: (step, refs, warn) => {
+      const src = refs[step.based_on_role ?? '']?.row;
+      const claims = (src?.[SPIKE_MAP.role.claims as string] as Row[] | undefined) ?? null;
+      if (!step.based_on_role) warn('role: no based_on_role');
+      else if (!claims?.length) warn(`role: ${step.based_on_role} has no permissions to copy`);
+      return { name: step.name, _enact_claims: claims };
+    },
+    afterCreate: (id, sent) => (sent._enact_claims ? { id, [SPIKE_MAP.role.claims as string]: sent._enact_claims } : null),
+    verifyCreate: (back, step) => {
+      const want = (step as PlanStep & { _claims?: number })._claims;
+      const got = ((back[SPIKE_MAP.role.claims as string] as Row[]) ?? []).length;
+      return want !== undefined && got !== want ? [`role has ${got} permissions, wanted ${want}`] : got ? [] : ['role has no permissions after saving'];
+    },
+  },
+
+  asset_group: {
+    resource: 'AssetGroup',
+    template: '',
+    reuseOnly: true,
+    build: (_s, _r, warn) => { warn('asset groups can only be reused for now'); return {}; },
+  },
+
+  asset_type: {
+    // Round 31: type 160 from { name, assetgroup_id } kept.
+    resource: 'AssetType',
+    template: '',
+    build: (step, refs, warn) => {
+      const p: Row = { name: step.name };
+      if (!step.asset_group) warn('asset_type: no asset_group');
+      set(p, SPIKE_MAP.assetType.group, refs[step.asset_group ?? '']?.id, 'asset group', warn);
+      return p;
     },
   },
 
@@ -2243,6 +2329,9 @@ export function refsOf(step: PlanStep): string[] {
     step.organisation,
     step.working_hours,
     step.faq_list,
+    step.based_on_role,
+    step.asset_group,
+    ...(step.set?.read_only ?? []),
     ...(step.set?.remove_fields ?? []),
   ].filter((r): r is string => Boolean(r));
 }

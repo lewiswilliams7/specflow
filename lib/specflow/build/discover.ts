@@ -172,7 +172,7 @@ const RESOURCE_OF: Record<PlanStep['object'], string> = {
   outcome: 'Outcome', workflow: 'Workflow', team: 'Team', approval_group: 'CAB', field_group: 'FieldGroup',
   agent: 'Agent', email_template: 'EmailTemplate', ticket_rule: 'TicketRules', ticket_template: 'Template', category: 'Category', notification: 'Notification',
   service: 'Service', service_category: 'ServiceCategory', user: 'Users', site: 'Site', organisation: 'Client', working_hours: 'Workday',
-  holiday: 'Holiday', canned_text: 'CannedText', lookup_value: 'Lookup', kb_article: 'KBArticle', faq_list: 'FAQLists',
+  holiday: 'Holiday', canned_text: 'CannedText', lookup_value: 'Lookup', kb_article: 'KBArticle', faq_list: 'FAQLists', role: 'Roles', asset_type: 'AssetType', asset_group: 'AssetGroup',
 };
 
 /** Make sure every template the plan needs exists for this instance. Returns lines describing what was picked. */

@@ -265,6 +265,11 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s.date ?? ''))) errors.push(`step "${s.id}": a holiday needs date "YYYY-MM-DD"`);
     }
     if (s.object === 'working_hours' && s.action === 'create' && (s.start || s.end) && !(/^\d{1,2}:\d{2}$/.test(String(s.start)) && /^\d{1,2}:\d{2}$/.test(String(s.end)))) errors.push(`step "${s.id}": working hours start and end are "HH:MM"`);
+    if (s.object === 'asset_group' && s.action !== 'reuse') errors.push(`step "${s.id}": asset groups can only be reused for now`);
+    if (s.object === 'role' && s.action === 'create') needKind(s, s.based_on_role, 'role', 'based_on_role');
+    if (s.object === 'role' && s.action === 'update') errors.push(`step "${s.id}": roles can't be changed, only created from another role`);
+    if (s.object === 'asset_type' && s.action === 'create') needKind(s, s.asset_group, 'asset_group', 'asset_group');
+    for (const r of s.set?.read_only ?? []) if (kindOf(r) !== 'field') errors.push(`step "${s.id}": read_only must list field steps (got "${r}")`);
     if (s.object === 'faq_list' && s.action !== 'reuse') errors.push(`step "${s.id}": FAQ lists can only be reused for now`);
     if (s.object === 'kb_article' && s.action === 'create') {
       needKind(s, s.faq_list, 'faq_list', 'faq_list');
