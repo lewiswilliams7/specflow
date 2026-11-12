@@ -148,6 +148,9 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
       }
     }
     ticket_types[nameOf(d)] = {
+      // What kind of ticket it is, so a new type is copied from the right kind (evidence: Change Request itilrequesttype 2,
+      // service requests 3; 12 Nov Compleat plan copied HR request forms from Task).
+      kind: ({ 1: 'incident', 2: 'change', 3: 'service request', 4: 'problem' } as Record<number, string>)[Number(d.itilrequesttype)] ?? (Number(d.itilrequesttype) ? `other (${d.itilrequesttype})` : 'other'),
       team: d.default_team || undefined,
       sla: slaName.get(Number(d.default_sla)),
       approval: d.approval_process_name || undefined,

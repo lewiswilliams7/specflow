@@ -261,6 +261,21 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
       errors.push(`step "${s.id}": "${s.name}" is copied from "${s.based_on}", which isn't a request type. Base it on a service request type from the inventory, or leave based_on out`);
   }
 
+  // A ticket type with an approval process on a workflow "without approval" (or the reverse) never gets approved.
+  const ttApproval = new Map<string, boolean>();
+  const ttWorkflow = new Map<string, string>();
+  for (const s of steps) {
+    if (s.object !== 'ticket_type') continue;
+    const key = String(s.name ?? s.match?.name ?? '').toLowerCase();
+    if (s.approval || s.set?.approval) ttApproval.set(key, true);
+    const wf = steps.find((x) => x.id === s.set?.workflow);
+    if (wf) ttWorkflow.set(key, String(wf.name ?? wf.match?.name ?? ''));
+  }
+  for (const [tt, wf] of ttWorkflow) {
+    if (ttApproval.get(tt) && /without approval/i.test(wf)) errors.push(`ticket type "${tt}" has an approval process but its workflow "${wf}" has no approval stage: use the workflow with approval`);
+    if (!ttApproval.get(tt) && /\(with (ad-hoc )?approval/i.test(wf)) errors.push(`ticket type "${tt}" has no approval process but its workflow "${wf}" waits for one: use the workflow without approval`);
+  }
+
   // Round 30 objects: every ref points at the right kind of step; nothing invented.
   const kindOf = (ref?: string) => steps.find((x) => x.id === ref)?.object;
   const needKind = (s: PlanStep, ref: string | undefined, kind: string, what: string, required = true) => {
