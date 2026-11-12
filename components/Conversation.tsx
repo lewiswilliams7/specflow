@@ -26,6 +26,8 @@ type Props = {
   choices?: { question: string; options: string[] }[];
   /** The latest plan's questions, each with its own answer box just above the message box. */
   questions?: string[];
+  /** When the instance was last read: a part planned against an older read isn't reused. */
+  inventoryAt?: string | null;
 };
 
 type Pending = { message: string; editOf?: string; stage: string; detail?: string; startedAt: number; awaiting?: string };
@@ -38,6 +40,31 @@ const STAGE: Record<string, (d?: string) => string> = {
   fixing: (d) => `Fixing ${d === '1' ? 'a problem' : `${d ?? 'the'} problems`} the checks found`,
   saving: () => 'Saving',
 };
+
+/** A short, stable fingerprint of a part's text, for reusing a part already planned in this browser. */
+function hashText(t: string): string {
+  let h = 5381;
+  for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + t.length.toString(36);
+}
+/** Parts planned cleanly in the last 24 hours, kept in this browser only. */
+function readSaved(key: string): { plan?: unknown; errors?: string[]; seal?: string; title?: string } | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { at, body } = JSON.parse(raw) as { at: number; body: { plan?: unknown } };
+    return Date.now() - at < 24 * 3600 * 1000 && body?.plan ? body : null;
+  } catch {
+    return null;
+  }
+}
+function writeSaved(key: string, body: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ at: Date.now(), body }));
+  } catch {
+    // Storage full or blocked: planning still works, it just isn't reused.
+  }
+}
 
 /** A sent message: what was typed in full, attached files as a name you can open. */
 function MessageText({ text }: { text: string }) {
@@ -64,7 +91,7 @@ const MAX_MESSAGE = 120000;
 const fmt = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`);
 
 /** Chat with the planner. Enter sends, Shift+Enter adds a line, Stop cancels, Edit replans from that message. */
-export function Conversation({ instanceId, threadId, turns, placeholder, start, blocked, after, choices, questions }: Props) {
+export function Conversation({ instanceId, threadId, turns, placeholder, start, blocked, after, choices, questions, inventoryAt }: Props) {
   const router = useRouter();
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
@@ -163,6 +190,15 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
               // Every part starts with the same instructions and instance read. Starting the others a few seconds
               // after the first lets the model provider reuse that shared start (charged at a tenth of the price)
               // instead of every part paying for it in full.
+              // A part already planned for this exact text in this browser (e.g. sending the same brief again after a
+              // fix) is reused rather than paid for twice. The merge re-checks it against the current instance.
+              const key = `enact-part:${instanceId}:${inventoryAt ?? ''}:${index}:${hashText(split.forms[index].text + split.preamble)}`;
+              const saved = readSaved(key);
+              if (saved) {
+                planned++;
+                setPending((p) => (p ? { ...p, stage: 'planning', detail: `${planned} of ${n} parts planned` } : p));
+                return saved;
+              }
               if (index > 0) await new Promise((r) => setTimeout(r, 8000));
               let body = await ask(index);
               // A part with problems gets one more pass on its own before the parts are merged.
@@ -171,6 +207,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
                 const fixed = await ask(index, body).catch(() => null);
                 if (fixed?.plan && (fixed.errors?.length ?? 0) < body.errors.length) body = fixed;
               }
+              if (body.plan && !body.errors?.length) writeSaved(key, body);
               planned++;
               setPending((p) => (p ? { ...p, stage: 'planning', detail: `${planned} of ${n} parts planned` } : p));
               return body;
@@ -221,7 +258,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
         abort.current = null;
       }
     },
-    [pending, blocked, instanceId, threadId, router, files],
+    [pending, blocked, instanceId, threadId, router, files, inventoryAt],
   );
 
   // A choice button under a plan (rule M13) sends its answer as the next message.

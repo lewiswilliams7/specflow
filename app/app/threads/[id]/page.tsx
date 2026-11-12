@@ -57,6 +57,7 @@ export default async function ThreadPage({ params }: { params: Promise<{ id: str
       </header>
       <StaleNotice instanceId={thread.instance_id} inventoryAt={inst?.inventory_at ?? null} />
       <Conversation
+        inventoryAt={inst?.inventory_at ?? null}
         instanceId={thread.instance_id}
         threadId={thread.id}
         turns={turns}

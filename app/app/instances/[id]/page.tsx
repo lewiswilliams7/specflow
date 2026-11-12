@@ -112,6 +112,7 @@ export default async function InstancePage({ params, searchParams }: { params: P
       {failed}
       <StaleNotice instanceId={inst.id} inventoryAt={inst.inventory_at} />
       <Conversation
+        inventoryAt={inst.inventory_at ?? null}
         instanceId={inst.id}
         turns={[]}
         placeholder="Describe the form, fields, approvals, stages and targets you need"

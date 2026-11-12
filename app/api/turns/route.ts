@@ -32,6 +32,8 @@ function plannerNote(plan: Plan | null, errors: string[]): string {
   ].filter(Boolean).join(' ');
 }
 
+const clip = (text: string) => (text.length > 4000 ? `${text.slice(0, 4000)}\n[… the rest of this long message is already reflected in the current plan]` : text);
+
 const json = (status: number, error: string) => Response.json({ error }, { status });
 
 export async function POST(req: Request) {
@@ -101,7 +103,9 @@ export async function POST(req: Request) {
     }
   }
   const history = earlier.flatMap((t) => [
-    { role: 'user' as const, text: t.message ?? t.request },
+    // A long brief (pasted or attached) is already in the current plan: resending it in full on every follow-up only
+    // costs tokens. Its opening is kept for context.
+    { role: 'user' as const, text: clip(t.message ?? t.request ?? '') },
     { role: 'planner' as const, text: plannerNote(t.plan, t.errors ?? []) },
   ]);
   const previous = [...earlier].reverse().find((t) => t.plan)?.plan ?? null;
