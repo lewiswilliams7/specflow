@@ -309,7 +309,7 @@ export const FEATURES: Feature[] = [
     key: 'visibility',
     name: 'showing a field only for some answers',
     sections: ['visibility'],
-    prompt: `- ticket_type set may have show_field_when: [{ field: ref of a field placed DIRECTLY on that form (not in a section), when: ref of a DROPDOWN field on the same form, equals: ONE of its options }]: the field shows only for that answer (V1). Add the field with add_fields first if it isn't on the form. A field shown by a rule that the request calls required (or "conditional") is still added with mandatory: true: Halo only asks for it while it's shown. Sections can't be made conditional yet.`,
+    prompt: `- ticket_type set may have show_field_when: [{ field: ref of a field placed DIRECTLY on that form (not in a section), when: ref of a DROPDOWN or MULTI-SELECT field on the same form, equals: ONE of its options }]: the field shows only for that answer (V1); for a multi-select it shows when that option is among the answers picked (V2). Add the field with add_fields first if it isn't on the form. A field shown by a rule that the request calls required (or "conditional") is still added with mandatory: true: Halo only asks for it while it's shown. Sections can't be made conditional yet.`,
   },
   {
     key: 'acknowledgement',

@@ -242,7 +242,6 @@ export default function Home() {
                 <ul>
                   <li>Emails when a rule or an approval changes the status</li>
                   <li>Child tickets raised in order or after approval</li>
-                  <li>Fields shown by a multi-select answer</li>
                   <li>Services and the self-service portal catalogue</li>
                   <li>Mailbox and email-to-ticket rules</li>
                   <li>Retiring old ticket types or removing fields <span>{site.name} never deletes</span></li>

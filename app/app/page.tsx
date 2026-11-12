@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { IconChat, IconCheck, IconServer } from '@/components/icons';
 import { LearnPanel } from '@/components/LearnPanel';
 import { isAdmin, isTrial } from '@/lib/admin';
+import { ROUND } from '@/lib/specflow/build/learn-areas';
 import { getContext } from '@/lib/workspace';
 
 // Run next to Halo UK instances and the Supabase project (London).
@@ -117,7 +118,7 @@ export default async function Overview() {
           </div>
         )}
       </section>
-      {isAdmin(user.email) ? <LearnPanel trial={trial ? { id: trial.id, name: trial.name } : null} /> : null}
+      {isAdmin(user.email) ? <LearnPanel round={ROUND} trial={trial ? { id: trial.id, name: trial.name } : null} /> : null}
     </div>
   );
 }

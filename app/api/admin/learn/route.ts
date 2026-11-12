@@ -1,7 +1,7 @@
-/** Runs learning round 28 (lib/specflow/build/learn-areas.ts) on Lewis's trial and returns SEND-TO-CLAUDE-28.txt. */
+/** Runs the current learning round (lib/specflow/build/learn-areas.ts) on Lewis's trial and returns SEND-TO-CLAUDE-28.txt. */
 import { isAdmin, isTrial } from '@/lib/admin';
 import { decrypt } from '@/lib/crypto';
-import { learnAreas } from '@/lib/specflow/build/learn-areas';
+import { ROUND, learnAreas } from '@/lib/specflow/build/learn-areas';
 import { memoryTemplates, withRuntime } from '@/lib/specflow/build/runtime';
 import { READ_ONLY_MESSAGE, assertPublicHost, haloClient } from '@/lib/specflow/halo';
 import { supabaseServer } from '@/lib/supabase/server';
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     if (apply && (await halo.access()) === 'read:all') return json(403, READ_ONLY_MESSAGE);
     const { out, summary } = await withRuntime({ halo, templates: memoryTemplates() }, () => learnAreas({ apply, instance: inst.base_url }));
     return new Response(JSON.stringify({ ...out, summary }, null, 2), {
-      headers: { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': 'attachment; filename="SEND-TO-CLAUDE-28.txt"', 'cache-control': 'no-store' },
+      headers: { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="SEND-TO-CLAUDE-${ROUND}.txt"`, 'cache-control': 'no-store' },
     });
   } catch (e) {
     return json(500, `The round stopped: ${(e as Error).message}`.slice(0, 500));

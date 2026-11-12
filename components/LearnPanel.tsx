@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 
-/** Founder-only: run learning round 28 on the trial and download the results to attach in Claude. */
-export function LearnPanel({ trial }: { trial: { id: string; name: string } | null }) {
+/** Founder-only: run the current learning round on the trial and download the results to attach in Claude. */
+export function LearnPanel({ trial, round }: { trial: { id: string; name: string } | null; round: number }) {
   const [apply, setApply] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -20,12 +20,12 @@ export function LearnPanel({ trial }: { trial: { id: string; name: string } | nu
         return;
       }
       const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-      const a = Object.assign(document.createElement('a'), { href: url, download: 'SEND-TO-CLAUDE-28.txt' });
+      const a = Object.assign(document.createElement('a'), { href: url, download: `SEND-TO-CLAUDE-${round}.txt` });
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      setMsg('Done. SEND-TO-CLAUDE-28.txt has downloaded: attach it in the chat with Claude.');
+      setMsg('Done. The results file has downloaded: attach it in the chat with Claude.');
     } catch (e) {
       setMsg(`Failed: ${(e as Error).message}`);
     } finally {
@@ -37,7 +37,7 @@ export function LearnPanel({ trial }: { trial: { id: string; name: string } | nu
     <section className="card" aria-labelledby="learn-h">
       <div className="card-head">
         <div>
-          <h2 id="learn-h">Learning round 28</h2>
+          <h2 id="learn-h">Learning round {round}</h2>
           <p>Only you see this. It runs on your trial only, makes &ldquo;zz Enact sample&rdquo; records and never deletes.</p>
         </div>
       </div>
@@ -49,7 +49,7 @@ export function LearnPanel({ trial }: { trial: { id: string; name: string } | nu
               <span>Make the zz samples on {trial.name} (untick to read only)</span>
             </label>
             <div>
-              <button className="btn btn-primary" type="button" onClick={run} disabled={busy}>{busy ? 'Running…' : 'Run round 28'}</button>
+              <button className="btn btn-primary" type="button" onClick={run} disabled={busy}>{busy ? 'Running…' : `Run round ${round}`}</button>
             </div>
           </>
         ) : (

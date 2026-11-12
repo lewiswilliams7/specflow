@@ -67,7 +67,7 @@ export const DESIGN_RULES = `Build these request forms in Halo. Each form is its
 - Fields that come from Halo's own user, Summary or Details: don't create them.
 - "text (numbers)" and "text (an amount)": build as text fields.
 - A list described as a site or location list is a live list of Halo's sites. Any other "agreed" list whose values aren't written: create the field with no options and list it under can't do yet. Don't invent values.
-- Anything marked NOT BUILT, and any show rule that depends on a multiple selection answer: don't build it, list it.
+- Anything marked NOT BUILT: don't build it, list it. Show rules may depend on a single or a multiple selection answer.
 - Fields with the same label, type and options on several forms are one field, reused. Same label with different options: separate fields.
 - Reuse an existing field only when its type matches; never rename or change a field, section or ticket type you reuse.
 - "Portal category" is where the form appears in the self-service portal, NOT a ticket category: don't create ticket categories or rules for it; list it.
