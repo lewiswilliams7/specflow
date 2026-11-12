@@ -318,7 +318,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
           <div className="attached" aria-label="Attached files">
             {files.map((f) => (
               <span key={f.name} className="chip" title={`${f.text.length.toLocaleString()} characters`}>
-                {f.name}
+                {f.design ? `${f.name}: form design, ${f.design.forms} form${f.design.forms === 1 ? '' : 's'}, ${f.design.fields} fields` : f.name}
                 <button type="button" className="chip-x" aria-label={`Remove ${f.name}`} onClick={() => setFiles((fs) => fs.filter((x) => x.name !== f.name))}>×</button>
               </span>
             ))}

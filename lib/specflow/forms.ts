@@ -4,9 +4,11 @@
  */
 export type FormSplit = { preamble: string; forms: { title: string; text: string }[] };
 
-export function splitForms(request: string): FormSplit | null {
+/** min: how many forms make it worth splitting. A form design (attached spreadsheet) is planned in parts even when it
+ *  has one form: its own request with low reasoning keeps a long form inside the time limit. */
+export function splitForms(request: string, min = /\(read as a form design/.test(request) ? 1 : 2): FormSplit | null {
   const marks = [...request.matchAll(/^={3,}\s*FORM:\s*(.+?)\s*=*\s*$/gim)];
-  if (marks.length < 2) return null;
+  if (marks.length < min || !marks.length) return null;
   return {
     preamble: request.slice(0, marks[0].index).trim(),
     forms: marks.map((m, i) => ({ title: m[1].trim(), text: request.slice(m.index! + m[0].length, i + 1 < marks.length ? marks[i + 1].index : undefined).trim() })),

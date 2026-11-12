@@ -4,8 +4,10 @@
  * from the text, which goes with the message.
  */
 import readXlsxFile from 'read-excel-file/browser';
+import { DESIGN_RULES, designSheetBrief } from './design-sheet';
 
-export type Attached = { name: string; text: string };
+/** design: the file is a request form design, read field by field in code. */
+export type Attached = { name: string; text: string; design?: { forms: number; fields: number } };
 
 export const ATTACH_TYPES = '.xlsx,.csv,.txt,.md,.json';
 /** Per file, so one large export can't crowd out the brief. */
@@ -18,6 +20,8 @@ export async function readAttachment(file: File): Promise<Attached> {
   let text: string;
   if (lower.endsWith('.xlsx')) {
     const sheets = await readXlsxFile(file);
+    const design = designSheetBrief(sheets.map((s) => ({ sheet: s.sheet, data: s.data.map((r) => r.map((c) => (c === null || c === undefined ? null : cell(c)))) })));
+    if (design) return { name: file.name, text: design.brief, design: { forms: design.forms, fields: design.fields } };
     text = sheets
       .map((s) => {
         const rows = s.data.map((r) => r.map(cell)).filter((r) => r.some(Boolean));
@@ -36,5 +40,13 @@ export async function readAttachment(file: File): Promise<Attached> {
 /** The message as the planner gets it: what was typed, then each file under its own heading. */
 export function withAttachments(message: string, files: Attached[]): string {
   if (!files.length) return message;
-  return [message.trim(), ...files.map((f) => `=== ATTACHED FILE: ${f.name} ===\n${f.text}`)].filter(Boolean).join('\n\n');
+  const designs = files.filter((f) => f.design);
+  const others = files.filter((f) => !f.design);
+  return [
+    // A form design brings its own build rules; what was typed comes after them, so it can add to or override them.
+    designs.length ? DESIGN_RULES : '',
+    designs.length && message.trim() ? `Also, from me:\n${message.trim()}` : message.trim(),
+    ...others.map((f) => `=== ATTACHED FILE: ${f.name} ===\n${f.text}`),
+    ...designs.map((f) => `=== ATTACHED FILE: ${f.name} (read as a form design: ${f.design!.forms} form${f.design!.forms === 1 ? '' : 's'}, ${f.design!.fields} fields) ===\n${f.text}`),
+  ].filter(Boolean).join('\n\n');
 }
