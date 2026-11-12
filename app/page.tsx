@@ -233,6 +233,11 @@ export default function Home() {
                   <li>Child tickets raised when a ticket is logged</li>
                   <li>Categories, and ticket rules that set them</li>
                   <li>Agent notifications for a team, scoped to a ticket type</li>
+                  <li>Services in the portal catalogue <span>with their summary and the ticket type they log</span></li>
+                  <li>Users, sites and organisations from a list <span>matched on email and name, so a re-run never duplicates</span></li>
+                  <li>Working hours and bank holidays</li>
+                  <li>Canned text, and values in Halo&apos;s own lists <span>impact, urgency, risk and similar</span></li>
+                  <li>Retiring old ticket types and taking fields off forms <span>hidden, never deleted</span></li>
                   <li>Form design spreadsheets and long briefs <span>planned form by form, then checked as one plan</span></li>
                   <li>Sign-off reports for every build <span>print or save as a PDF</span></li>
                 </ul>
@@ -242,10 +247,9 @@ export default function Home() {
                 <ul>
                   <li>Emails when a rule or an approval changes the status</li>
                   <li>Child tickets raised in order or after approval</li>
-                  <li>Services and the self-service portal catalogue</li>
                   <li>Mailbox and email-to-ticket rules</li>
-                  <li>Retiring old ticket types or removing fields <span>{site.name} never deletes</span></li>
-                  <li>Roles and permissions, reports, runbooks</li>
+                  <li>Roles and permissions, asset types, knowledge base articles</li>
+                  <li>Reports, dashboards, runbooks</li>
                 </ul>
               </div>
             </div>

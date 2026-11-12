@@ -239,7 +239,7 @@ export const SPIKE_MAP = {
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
   /** Round 30: the new objects are switched on only once the REAL builder has built them on the trial (dry-run gate,
    *  apply, read-back, re-run without duplicates). Rounds 28-29 proved the payloads by hand-written requests only. */
-  builderProof: { round30: null as string | null },
+  builderProof: { round30: 'built' as string | null }, // round 30 (Concord, 12 Nov): site 22, user 60, type 57, service 170, workday 4, holidays b12175bc/d079b70c, canned text 31 built and read back; re-run reused all 13; type 57 show rule + field removed, then retired
   /** Services (round 29, Concord trial): service 169 made from these keys alone and kept every one. */
   service: {
     category: 'service_category_id' as string | null,
@@ -255,14 +255,14 @@ export const SPIKE_MAP = {
     siteOrganisation: 'client_id' as string | null,
   },
   /** Organisations: round 28's copy answered 500 and still renamed Client 12 (S1b). A minimal create isn't proven yet. */
-  organisation: { create: null as string | null },
+  organisation: { create: 'name' as string | null }, // round 30: Client 13 from { name } alone, kept
   /** Working hours (round 28: a copy of workday 1 kept all 31 settings, as workday 3) and bank holidays (HL1, round 29:
    *  POST /Holiday { workday_id, name, date, end_date, allday, holiday_type 1 } → holid 208 on workday 3). */
   workingHours: { holidayResource: 'Holiday' as string | null, holidayWorkday: 'workday_id' as string | null },
   /** Canned text: round 28's copy and a text update were kept; a create from name and text alone isn't proven yet. */
-  cannedText: { create: null as string | null },
+  cannedText: { create: 'name' as string | null }, // round 30: canned text 31 { name, text, html } built by the builder, read back
   /** Lookup values (LK1): adding one is proven (round 29), but which list is which (list names) isn't yet. */
-  lookupList: { names: null as string | null },
+  lookupList: { names: 'lookupid 11' as string | null }, // round 30: list 11's row ids are the other lists' lookupids (12 Impact Level, 13 Risk Of Failure Level, 27 Urgency Level ...)
   /** Retire a ticket type (T8, round 29: visible false on type 56, gone from the lists). */
   retire: { key: 'visible' as string | null },
   /** Remove a field from a form (round 28: rows sent without field 312 → gone from type 56). */
@@ -373,13 +373,13 @@ export const FEATURES: Feature[] = [
     sections: ['people', 'builderProof'],
     prompt: `- site: create { name, organisation: ref of a REUSED organisation step (inventory.organisations) }. Reuse sites already in inventory.sites.
 - user (an end user, NOT an agent): create { name: "First Last", firstname, surname, email, site: site ref }. Only people the brief or an attached list names, with their email. Never invent an email. Enact matches users on email: one already there is left alone.
-- organisation: REUSE ONLY for now, by exact name.`,
+- organisation: reuse by exact name from inventory.organisations.`,
   },
   {
     key: 'organisations',
     name: 'new organisations',
-    sections: ['organisation'],
-    prompt: '',
+    sections: ['organisation', 'builderProof'],
+    prompt: `- organisation: create { name } when the brief names one that inventory.organisations doesn't have (rule S1b: Enact never copies an organisation).`,
   },
   {
     key: 'working_hours',
@@ -391,14 +391,14 @@ export const FEATURES: Feature[] = [
   {
     key: 'canned_text',
     name: 'canned text',
-    sections: ['cannedText'],
+    sections: ['cannedText', 'builderProof'],
     prompt: `- canned_text: create { name, text }: a saved reply agents insert into a ticket. text in plain words, line breaks as \n.`,
   },
   {
     key: 'lookup_values',
     name: 'values in Halo\'s own lists (closure codes, asset statuses, risk levels)',
-    sections: ['lookupList'],
-    prompt: '',
+    sections: ['lookupList', 'builderProof'],
+    prompt: `- lookup_value: a value in one of Halo's own lists that isn't a custom field (impact, urgency, risk, closure or fault codes, asset statuses...): create { name, list: the NUMBER from inventory.lookup_lists for that list }. Only lists named there. A custom dropdown field's options are NOT this: use field update add_options. Enact skips a value already in the list.`,
   },
   {
     key: 'retire',
