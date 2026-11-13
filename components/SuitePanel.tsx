@@ -75,7 +75,7 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
       // Each brief gets its own tag, so one brief never trips over what another built in the same run (13 Nov t2un:
       // "copy of the existing zz … New Starter" came from Northgate's build minutes earlier).
       const bt = `${t}${'abcdefghijklmnop'[i] ?? i}`;
-      const b = { ...per, tag: bt };
+      const per = { ...base, tag: bt };
       let request = tagBrief(s.brief, bt);
       let which: { brief_text: string } | { index: number } = s.pasted ? { brief_text: s.brief } : { index: s.index };
       try {
