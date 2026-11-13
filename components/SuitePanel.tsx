@@ -72,7 +72,11 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
 
     for (const [i, s] of chosen.entries()) {
       if (signal.aborted) break;
-      let request = tagBrief(s.brief, t);
+      // Each brief gets its own tag, so one brief never trips over what another built in the same run (13 Nov t2un:
+      // "copy of the existing zz … New Starter" came from Northgate's build minutes earlier).
+      const bt = `${t}${'abcdefghijklmnop'[i] ?? i}`;
+      const b = { ...per, tag: bt };
+      let request = tagBrief(s.brief, bt);
       let which: { brief_text: string } | { index: number } = s.pasted ? { brief_text: s.brief } : { index: s.index };
       try {
         const t0 = Date.now();
@@ -82,7 +86,7 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
           if (!last?.plan) { update(i, { status: 'no saved plan: plan it once first' }); continue; }
           update(i, { status: 're-checking (no model calls)' });
           request = last.request;
-          res = await post('/api/admin/suite', { ...base, op: 'recheck', plan: last.plan, request }, signal);
+          res = await post('/api/admin/suite', { ...per, op: 'recheck', plan: last.plan, request }, signal);
         } else {
         update(i, { status: 'planning' });
         // M17: a long prose brief is split first, as in a customer's conversation.
@@ -107,10 +111,10 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
             return { title: String(p.title ?? split.forms[index].title), plan: p.plan ?? null, errors: p.errors ?? [] };
           }));
           update(i, { status: 'merging', parts: partsInfo });
-          res = await post('/api/admin/suite', { ...base, op: 'merge', ...which, parts }, signal);
+          res = await post('/api/admin/suite', { ...per, op: 'merge', ...which, parts }, signal);
           update(i, { firstPassClean: partsInfo.every((p) => p.first === 0) && res.errors.length === 0 });
         } else {
-          res = await post('/api/admin/suite', { ...base, op: 'plan', ...which }, signal);
+          res = await post('/api/admin/suite', { ...per, op: 'plan', ...which }, signal);
           update(i, { firstPassClean: res.errors.length === 0 });
         }
         if (res.plan) writeSaved(s.id, { request, plan: res.plan, passed: false });
@@ -129,7 +133,7 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
           let ok = false;
           let seconds = 0;
           for (let round = 0; round < 6; round++) {
-            const b = await post<{ ok: boolean; stopped: boolean; problems: string[]; seconds: number; log: { outcome: string; name: string; error?: string; warnings?: string[] }[] }>('/api/admin/suite', { ...base, op: 'build', plan, apply }, signal);
+            const b = await post<{ ok: boolean; stopped: boolean; problems: string[]; seconds: number; log: { outcome: string; name: string; error?: string; warnings?: string[] }[] }>('/api/admin/suite', { ...per, op: 'build', plan, apply }, signal);
             seconds += b.seconds;
             problems = b.problems;
             ok = b.ok;
@@ -151,7 +155,7 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
         const bd = await runBuild(true);
         update(i, { build: bd, status: bd.ok && !bd.errors.length ? 'built and checked' : 'build had problems' });
         if (bd.ok && !bd.errors.length) writeSaved(s.id, { passed: true });
-        await post('/api/admin/suite', { ...base, op: 'refresh' }, signal).catch(() => null);
+        await post('/api/admin/suite', { ...per, op: 'refresh' }, signal).catch(() => null);
       } catch (e) {
         update(i, { status: 'stopped', error: (e as Error).message });
         if (signal.aborted) break;

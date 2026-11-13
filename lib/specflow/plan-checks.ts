@@ -268,7 +268,10 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   // type, or leave based_on out so Enact picks one (rule D3).
   for (const s of steps) {
     if (s.object !== 'ticket_type' || s.action !== 'create' || !s.based_on) continue;
-    if (/^\s*(task|project|problem|incident|major incident|negative feedback)s?\s*$/i.test(s.based_on))
+    // A new incident (or problem) type IS rightly based on Halo's Incident (or Problem): the rule is for request forms
+    // (13 Nov run-through: an incident brief was told not to copy Incident).
+    const sameKind = /incident/i.test(String(s.name)) ? /incident/i : /problem/i.test(String(s.name)) ? /problem/i : null;
+    if (/^\s*(task|project|problem|incident|major incident|negative feedback)s?\s*$/i.test(s.based_on) && !(sameKind && sameKind.test(s.based_on)))
       errors.push(`step "${s.id}": "${s.name}" is copied from "${s.based_on}", which isn't a request type. Base it on a service request type from the inventory, or leave based_on out`);
   }
 

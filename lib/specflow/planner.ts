@@ -580,7 +580,7 @@ async function fixMerged(inventory: Inventory, request: string, plan: Plan, erro
   const fix = await generatePlan(inventory, `Fix these problems in the current plan and change nothing else:\n- ${errors.slice(keep).join('\n- ')}`, { requester: ctx.requester, previous: plan, history: [{ role: 'user', text: request }] }, { ...opts, effort: 'low' }).catch(() => null);
   if (!fix?.plan || fix.plan.fresh) return { plan, errors };
   applyWrittenOptions(fix.plan, request, inventory);
-  attachUnusedWorkflows(fix.plan);
+  codeRepairs(fix.plan, inventory);
   applyWrittenRequirement(fix.plan, request, inventory);
   fix.plan.request = request;
   const again = [...errors.slice(0, keep), ...validate(fix.plan)];
@@ -610,10 +610,75 @@ export function attachUnusedWorkflows(plan: Plan) {
   plan.steps = orderByDependency(steps);
 }
 
+/**
+ * Code repairs for mistakes the planner keeps making and the fix pass doesn't always mend (13 Nov run-through t2un).
+ * Each one only applies when the answer is unambiguous; anything else is left for the checks to report.
+ * M20 action "set" means update; M21 a new field identical to an existing one is reused (its own help text becomes the
+ * forms' override, F14); M22 an SLA with per-priority targets and no based_on copies an existing SLA that has every
+ * priority it targets; M23 a reference written as an existing record's name gets a reuse step for that record.
+ */
+export function codeRepairs(plan: Plan, inventory: Inventory) {
+  attachUnusedWorkflows(plan);
+  const steps = plan.steps as PlanStep[];
+  for (const st of steps) if ((st.action as string) === 'set') st.action = 'update';
+
+  const cf = inventory.details?.custom_fields ?? {};
+  const stem = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w.replace(/(ing|ed|s)$/, '')).join(' ');
+  const kind = (d: string) => `${d.match(/^"[^"]*"\s+(\w+)/)?.[1] ?? ''}${/\[dynamic list\]/.test(d) ? ':dynamic' : ''}`;
+  const optionsOf = (d: string) => (d.match(/^"[^"]*"\s+[^:]+:\s*(.*)$/)?.[1] ?? '').replace(/\s+\(hint: .*\)\s*$/, '').split(' | ').map((o) => o.trim().toLowerCase());
+  const hintOf = (d: string) => d.match(/\(hint: (.*)\)\s*$/)?.[1];
+  for (const [i, st] of steps.entries()) {
+    if (st.object !== 'field' || st.action !== 'create' || !st.label) continue;
+    if (st.dynamic && steps.some((x) => (x.set?.replace_fields ?? []).some((r) => r.new === st.id))) continue;
+    const want = `${st.type}${st.dynamic ? ':dynamic' : ''}`;
+    const hits = Object.entries(cf).filter(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(st.label!) && kind(String(d)) === want
+      && (!(st.type === 'dropdown' || st.type === 'multiselect') || (st.options ?? []).every((o) => optionsOf(String(d)).includes(String(o).trim().toLowerCase()))));
+    if (hits.length !== 1) continue;
+    const [name, d] = hits[0];
+    const own = st.hint;
+    steps[i] = { id: st.id, object: 'field', action: 'reuse', match: { name } } as PlanStep;
+    if (own !== undefined && own !== (hintOf(String(d)) ?? '')) {
+      for (const t of steps) {
+        if (t.object !== 'ticket_type') continue;
+        for (const f of [...(t.fields ?? []), ...(t.set?.add_fields ?? [])]) if (f.ref === st.id && f.hint === undefined) f.hint = own;
+      }
+    }
+    plan.assumptions = [...(plan.assumptions ?? []), `"${st.label}" reuses the existing field ${name} instead of making a duplicate.`];
+  }
+
+  const slaTargets = inventory.details?.sla_targets ?? {};
+  for (const st of steps) {
+    if (st.object !== 'sla' || st.action !== 'create' || st.based_on || !st.targets || !Object.keys(st.targets).length) continue;
+    const want = Object.keys(st.targets).map((p) => p.toLowerCase());
+    const fits = Object.entries(slaTargets).filter(([, t]) => { const has = String(t).split(', ').map((x) => x.replace(/ \S+$/, '').toLowerCase()); return want.every((p) => has.includes(p)); }).map(([n]) => n);
+    // Prefer Halo's own SLAs over test copies, and one whose name shares a word with this one.
+    const words = new Set(String(st.name ?? '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
+    const ranked = fits.sort((a, b) => Number(/^zz/i.test(a)) - Number(/^zz/i.test(b)) || [...b.toLowerCase().split(/[^a-z]+/)].filter((w) => words.has(w)).length - [...a.toLowerCase().split(/[^a-z]+/)].filter((w) => words.has(w)).length);
+    if (ranked[0]) { st.based_on = ranked[0]; plan.assumptions = [...(plan.assumptions ?? []), `"${st.name}" is copied from the existing SLA "${ranked[0]}", which has every priority it sets.`]; }
+  }
+
+  const ids = new Set(steps.map((x) => x.id));
+  const lists: [PlanStep['object'], string[]][] = [
+    ['ticket_type', inventory.ticket_types], ['workflow', Object.keys(inventory.workflows_and_their_steps ?? {})], ['outcome', inventory.actions],
+    ['team', inventory.teams], ['sla', inventory.slas], ['approval_process', inventory.approval_processes], ['approval_group', inventory.approval_groups], ['status', inventory.statuses],
+  ];
+  for (const st of [...steps]) {
+    for (const r of refsOf(st)) {
+      if (!r || ids.has(r)) continue;
+      const found = lists.filter(([, names]) => (names ?? []).some((n) => String(n).toLowerCase() === r.toLowerCase()));
+      if (found.length !== 1) continue;
+      const exact = (found[0][1] ?? []).find((n) => String(n).toLowerCase() === r.toLowerCase())!;
+      steps.unshift({ id: r, object: found[0][0], action: 'reuse', match: { name: String(exact) } } as PlanStep);
+      ids.add(r);
+    }
+  }
+  plan.steps = orderByDependency(steps);
+}
+
 /** Re-run the code repairs and checks on a saved plan, with no model call (the run-through's free re-check). */
 export function recheckPlan(inventory: Inventory, request: string, plan: Plan): string[] {
   applyWrittenOptions(plan, request, inventory);
-  attachUnusedWorkflows(plan);
+  codeRepairs(plan, inventory);
   applyWrittenRequirement(plan, request, inventory);
   return makePlanner(inventory, request, {}).validate(plan);
 }
@@ -623,7 +688,7 @@ export async function mergeAndCheck(inventory: Inventory, request: string, parts
   const ok = parts.filter((r) => r.plan) as { title: string; plan: Plan }[];
   let plan = mergePlans(ok, request);
   applyWrittenOptions(plan, request, inventory);
-  attachUnusedWorkflows(plan);
+  codeRepairs(plan, inventory);
   applyWrittenRequirement(plan, request, inventory);
   const { validate } = makePlanner(inventory, request, ctx);
   // Up to 4 questions per part: a merged plan carries every part's.
@@ -650,7 +715,7 @@ async function planInParts(inventory: Inventory, request: string, split: import(
   opts.onStage?.('checking');
   let plan = mergePlans(ok.map((r) => ({ title: r.title, plan: r.plan })), request);
   applyWrittenOptions(plan, request, inventory);
-  attachUnusedWorkflows(plan);
+  codeRepairs(plan, inventory);
   applyWrittenRequirement(plan, request, inventory);
   const { validate } = makePlanner(inventory, request, ctx);
   const failed = results.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this form (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`);
@@ -698,7 +763,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
       if (revising && plan) delete plan.fresh;
       if (plan && Array.isArray(plan.steps)) plan.steps = orderByDependency(plan.steps);
       if (plan && Array.isArray(plan.steps)) applyWrittenOptions(plan, request, inventory);
-      if (plan && Array.isArray(plan.steps)) attachUnusedWorkflows(plan);
+      if (plan && Array.isArray(plan.steps)) codeRepairs(plan, inventory);
       if (plan && Array.isArray(plan.steps)) applyWrittenRequirement(plan, request, inventory);
     } catch {
       errors = ['The planner reply was not valid JSON.'];
