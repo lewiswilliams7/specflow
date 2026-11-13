@@ -1821,7 +1821,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       else if (k && st.parent) out[k] = refs[st.parent]?.id;
       const a = SPIKE_MAP.serviceCategory.access;
       if (a && st.everyone && !hasEveryone(current?.[a])) out[a] = everyoneAccess();
-      if (!Object.keys(out).length) warn('service category update: nothing to set');
+      // Already as asked (e.g. already open to everyone) is "no change needed", not a problem (13 Nov, Compleat).
+      if (!Object.keys(out).length && !st.name && !st.parent && !st.top_level && !st.everyone) warn('service category update: nothing to set');
       return out;
     },
     verifyCreate: (back, step, refs) => {
