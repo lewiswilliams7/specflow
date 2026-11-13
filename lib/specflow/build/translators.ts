@@ -1808,7 +1808,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
       return p;
     },
     afterCreate: (id, sent) => (sent._enact_after ? { id, ...(sent._enact_after as Row) } : null),
-    // Round 38: category 26 kept a rename. Moving to another parent isn't proven (round 39), so only the name changes.
+    // Halo adds ids to the access rows: check the "Everyone" rule is there, not the JSON (SC3).
+    verifyUpdate: (back, changes) => Object.entries(changes).flatMap(([k, v]) =>
+      k === SPIKE_MAP.serviceCategory.access ? (hasEveryone(back[k]) ? [] : ['User Access isn\'t Everyone after saving']) : JSON.stringify(back[k]) !== JSON.stringify(v) ? [`${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(v)}`] : []),
     // Round 38: rename kept; round 39: parent_id 0 and back to 8 kept (moving). SC2 still applies: 3 levels at most.
     update: (step, refs, warn, current) => {
       const st = step.set ?? {};

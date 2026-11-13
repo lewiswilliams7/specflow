@@ -113,7 +113,7 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
         break;
       }
       case 'service_category':
-        out.push(step.parent ? `New subcategory under ${ref(step.parent)}` : 'New top-level service category');
+        out.push(`${step.parent ? `New subcategory under ${ref(step.parent)}` : 'New top-level service category'}, open to everyone`);
         break;
       case 'service':
         out.push(`New service in ${ref(step.service_category)}, logging ${ref(step.ticket_type)}${step.show_on_portal === false ? ', hidden from the portal' : ', on the portal'}${step.summary ? `: "${step.summary}"` : ''}`);
@@ -161,6 +161,7 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
   if (st.retire) out.push('retire it (hidden from lists and the portal; nothing deleted)');
   if (st.name) out.push(`rename to "${st.name}"`);
   if (st.top_level) out.push('move to the top level');
+  if (st.everyone) out.push('User Access: Everyone');
   if (st.parent) out.push(`move under ${ref(st.parent)}`);
   if (st.attachments) out.push(st.attachments.allow === false ? 'turn attachments off' : st.attachments.min ? `require at least ${st.attachments.min} attachment${st.attachments.min === 1 ? '' : 's'}` : 'allow attachments (not required)');
   for (const f of st.remove_fields ?? []) out.push(`take ${ref(f)} off the form (the field stays in Halo)`);
