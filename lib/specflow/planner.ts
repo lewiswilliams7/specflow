@@ -633,8 +633,10 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     const want = `${st.type}${st.dynamic ? ':dynamic' : ''}`;
     const hits = Object.entries(cf).filter(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(st.label!) && kind(String(d)) === want
       && (!(st.type === 'dropdown' || st.type === 'multiselect') || (st.options ?? []).every((o) => optionsOf(String(d)).includes(String(o).trim().toLowerCase()))));
-    if (hits.length !== 1) continue;
-    const [name, d] = hits[0];
+    if (!hits.length) continue;
+    // Several identical fields: Halo's own before test copies, as the duplicate check picks (13 Nov re-check: three
+    // "Start Date" fields and the repair stood aside).
+    const [name, d] = hits.find(([n]) => !/^CFzz/i.test(n)) ?? hits[0];
     const own = st.hint;
     steps[i] = { id: st.id, object: 'field', action: 'reuse', match: { name } } as PlanStep;
     if (own !== undefined && own !== (hintOf(String(d)) ?? '')) {
@@ -655,6 +657,35 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     const words = new Set(String(st.name ?? '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
     const ranked = fits.sort((a, b) => Number(/^zz/i.test(a)) - Number(/^zz/i.test(b)) || [...b.toLowerCase().split(/[^a-z]+/)].filter((w) => words.has(w)).length - [...a.toLowerCase().split(/[^a-z]+/)].filter((w) => words.has(w)).length);
     if (ranked[0]) { st.based_on = ranked[0]; plan.assumptions = [...(plan.assumptions ?? []), `"${st.name}" is copied from the existing SLA "${ranked[0]}", which has every priority it sets.`]; }
+  }
+
+  // New stages listed before the stage they follow ("Facilities" after "IT Provisioning", listed first) are put in order.
+  for (const st of steps) {
+    for (const list of [st.insert_steps, st.set?.insert_steps]) {
+      if (!list || list.length < 2) continue;
+      const done: typeof list = [];
+      const left = [...list];
+      while (left.length) {
+        const k = left.findIndex((x) => !left.some((y) => y !== x && y.name.toLowerCase() === x.after_step.toLowerCase()));
+        done.push(...left.splice(k < 0 ? 0 : k, 1));
+      }
+      list.splice(0, list.length, ...done);
+    }
+  }
+
+  // A new type copied from an existing one, with no workflow chosen, keeps that type's workflow, said explicitly
+  // (13 Nov: new Incident and Major Incident types copied from Halo's failed "has no workflow").
+  const ttDetails = (inventory.details?.ticket_types ?? {}) as Record<string, { workflow?: string }>;
+  for (const tt of [...steps]) {
+    if (tt.object !== 'ticket_type' || tt.action !== 'create' || !tt.based_on) continue;
+    if (steps.some((u) => u.object === 'ticket_type' && u.action === 'update' && String(u.match?.name ?? '').toLowerCase() === String(tt.name ?? '').toLowerCase() && u.set?.workflow)) continue;
+    const base = Object.entries(ttDetails).find(([n]) => n.toLowerCase() === tt.based_on!.toLowerCase())?.[1]?.workflow;
+    const wf = base ? Object.keys(inventory.workflows_and_their_steps ?? {}).find((w) => w.toLowerCase() === base.toLowerCase()) : undefined;
+    if (!wf) continue;
+    let wfStep = steps.find((x) => x.object === 'workflow' && x.action === 'reuse' && String(x.match?.name ?? '').toLowerCase() === wf.toLowerCase());
+    if (!wfStep) { wfStep = { id: `wf_${wf.replace(/\W+/g, '_').toLowerCase()}`, object: 'workflow', action: 'reuse', match: { name: wf } } as PlanStep; steps.unshift(wfStep); }
+    steps.push({ id: `wf_for_${tt.id}`, object: 'ticket_type', action: 'update', match: { name: String(tt.name) }, set: { workflow: wfStep.id } } as PlanStep);
+    plan.assumptions = [...(plan.assumptions ?? []), `"${tt.name}" keeps the workflow of "${tt.based_on}" ("${wf}"), which it's copied from.`];
   }
 
   const ids = new Set(steps.map((x) => x.id));
@@ -680,7 +711,8 @@ export function recheckPlan(inventory: Inventory, request: string, plan: Plan): 
   applyWrittenOptions(plan, request, inventory);
   codeRepairs(plan, inventory);
   applyWrittenRequirement(plan, request, inventory);
-  return makePlanner(inventory, request, {}).validate(plan);
+  // Same allowance as a merged plan: up to 6 questions across the parts.
+  return makePlanner(inventory, request, {}).validate(plan).filter((e) => !(/^\d+ questions: keep at most 4/.test(e) && (plan.questions?.length ?? 0) <= 6));
 }
 
 /** M14: merge forms planned separately (in their own requests) and check the result like any plan. */
