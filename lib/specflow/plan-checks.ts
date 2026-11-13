@@ -51,7 +51,9 @@ export function mixedBand(option: string): boolean {
 /** Options already on an existing custom field, from its inventory details ('"Label" dropdown: a | b'). */
 function existingOptions(details?: string): string[] {
   const m = details?.match(/^"[^"]*"\s+[^:]+:\s*(.*)$/);
-  return m ? m[1].split(' | ').map((o) => o.trim()).filter(Boolean) : [];
+  // The inventory line ends with " (hint: ...)" when the field has help text: not part of the last option (13 Nov:
+  // "Other (hint: Select the option...)" read as a missing "Other").
+  return m ? m[1].replace(/\s+\(hint: .*\)\s*$/, '').split(' | ').map((o) => o.trim()).filter(Boolean) : [];
 }
 const fieldLabel = (details?: string) => details?.match(/^"([^"]*)"/)?.[1];
 

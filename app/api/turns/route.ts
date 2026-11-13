@@ -132,7 +132,7 @@ export async function POST(req: Request) {
         if (parts) {
           // M14: a brief marked into forms is always a new request; its forms were planned one per request.
           send({ type: 'stage', stage: 'checking', detail: `merging ${parts.length} parts` });
-          result = mergeAndCheck(inst.inventory as Inventory, message, parts.map((p) => ({ title: String(p.title), plan: p.plan, errors: p.errors ?? [] })), { requester: { email: user.email ?? '' } });
+          result = await mergeAndCheck(inst.inventory as Inventory, message, parts.map((p) => ({ title: String(p.title), plan: p.plan, errors: p.errors ?? [] })), { requester: { email: user.email ?? '' } }, { signal: stop.signal, cacheKey: `specflow-${inst.id}`, onStage: (stage: Stage, detail?: string) => send({ type: 'stage', stage, detail }) });
           result.model = parts.find((p) => p.model)?.model ?? '';
           if (result.plan && earlier.some((t) => t.plan)) result.plan.fresh = true;
         } else {

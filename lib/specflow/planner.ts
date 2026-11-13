@@ -509,17 +509,78 @@ export function applyWrittenRequirement(plan: Plan, request: string, inventory: 
   }
 }
 
+/**
+ * Rule M15 (13 Nov, Compleat General Enquiry): a brief that writes out a dropdown's options decides whether an existing
+ * field fits. The planner reused Benefits & Reward's "Enquiry category" (benefits options) for General Enquiry's own
+ * list, the checks failed, and the fix pass made the same mistake. So in code: when a reused dropdown or multi-select
+ * lacks any written option, the step becomes a new field with the written label, options and help text (same step id,
+ * so every reference still holds). Nothing is ever changed on the existing field.
+ */
+export function applyWrittenOptions(plan: Plan, request: string, inventory: Inventory) {
+  const blocks = splitForms(request, 1)?.forms.map((f) => f.text) ?? [request];
+  const written = new Map<string, { label: string; type: 'dropdown' | 'multiselect'; options: string[]; hint?: string; form: string }>();
+  for (const text of blocks) {
+    const form = text.match(/Ticket type:?\s*"([^"]+)"/i)?.[1]?.trim() ?? '';
+    for (const line of text.split('\n')) {
+      const hit = line.match(/^\s*-\s+(.+?):\s+(single selection|dropdown|multiple selection|multi-select|multiselect)\b.*?\bOptions:\s*(.+?)(?:\.\s+(?:Show rules|Help text)\b|\.?\s*$)/i);
+      if (!hit || /agreed|halo site|site\s*\/\s*location list/i.test(hit[3])) continue;
+      const options = hit[3].split(';').map((o) => o.trim().replace(/\.$/, '')).filter(Boolean);
+      if (!options.length) continue;
+      const hint = line.match(/Help text:\s*"([^"]*)"/i)?.[1];
+      const label = hit[1].trim();
+      written.set(label.toLowerCase(), { label, type: /multi/i.test(hit[2]) ? 'multiselect' : 'dropdown', options, hint, form });
+    }
+  }
+  if (!written.size) return;
+  const cf = (inventory as unknown as { details?: { custom_fields?: Record<string, string> } }).details?.custom_fields ?? {};
+  const taken = new Set([...Object.keys(cf), ...plan.steps.map((x) => String(x.name ?? ''))].map((n) => n.toLowerCase()));
+  for (const [i, st] of (plan.steps as PlanStep[]).entries()) {
+    if (st.object !== 'field' || st.action !== 'reuse') continue;
+    const details = cf[st.match?.name ?? ''];
+    const label = String(details?.match(/^"([^"]*)"/)?.[1] ?? st.match?.name ?? '').trim().toLowerCase();
+    const w = written.get(label);
+    if (!w || !details) continue;
+    const optsOf = (d: string) => (d.match(/^"[^"]*"\s+[^:]+:\s*(.*)$/)?.[1] ?? '').replace(/\s+\(hint: .*\)\s*$/, '').split(' | ').map((o) => o.trim().toLowerCase());
+    const have = optsOf(details);
+    const added = plan.steps.filter((x) => x.object === 'field' && x.action === 'update' && x.match?.name === st.match?.name).flatMap((x) => x.set?.add_options ?? []).map((o) => o.toLowerCase());
+    if (w.options.every((o) => have.includes(o.toLowerCase()) || added.includes(o.toLowerCase()))) continue;
+    // Another existing field with this label may already have exactly these options (e.g. made for this form before).
+    const fits = Object.entries(cf).find(([, d]) => String(d.match(/^"([^"]*)"/)?.[1] ?? '').trim().toLowerCase() === label && / (dropdown|multiselect|multi-select)/.test(d) && w.options.every((o) => optsOf(d).includes(o.toLowerCase())));
+    if (fits) { st.match = { name: fits[0] }; continue; }
+    let name = `CF${pascal(w.label)}${pascal(w.form)}`;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `CF${pascal(w.label)}${pascal(w.form)}${n}`;
+    taken.add(name.toLowerCase());
+    plan.steps[i] = { id: st.id, object: 'field', action: 'create', name, label: w.label, type: w.type, options: w.options, ...(w.hint !== undefined ? { hint: w.hint } : {}) } as PlanStep;
+    plan.assumptions = [...(plan.assumptions ?? []), `"${w.label}": the existing field has different options, so a new field is made with the ones written (the existing one is left as it is).`];
+  }
+}
+
+/** One fix pass on a merged plan, as a single plan gets (13 Nov: briefs failed the checks on the first try and the user
+ * had to reply to get a second attempt). The fix is kept only if it has fewer problems. */
+async function fixMerged(inventory: Inventory, request: string, plan: Plan, errors: string[], keep: number, ctx: PlanContext, opts: GenerateOptions, validate: (p: Plan) => string[]): Promise<{ plan: Plan; errors: string[] }> {
+  if (errors.length <= keep || opts.signal?.aborted) return { plan, errors };
+  opts.onStage?.('fixing', `${errors.length - keep}`);
+  const fix = await generatePlan(inventory, `Fix these problems in the current plan and change nothing else:\n- ${errors.slice(keep).join('\n- ')}`, { requester: ctx.requester, previous: plan, history: [{ role: 'user', text: request }] }, { ...opts, effort: 'low' }).catch(() => null);
+  if (!fix?.plan || fix.plan.fresh) return { plan, errors };
+  applyWrittenOptions(fix.plan, request, inventory);
+  applyWrittenRequirement(fix.plan, request, inventory);
+  fix.plan.request = request;
+  const again = [...errors.slice(0, keep), ...validate(fix.plan)];
+  return again.length < errors.length ? { plan: fix.plan, errors: again } : { plan, errors };
+}
+
 /** M14: merge forms planned separately (in their own requests) and check the result like any plan. */
-export function mergeAndCheck(inventory: Inventory, request: string, parts: { title: string; plan: Plan | null; errors: string[] }[], ctx: PlanContext = {}): PlanResult {
+export async function mergeAndCheck(inventory: Inventory, request: string, parts: { title: string; plan: Plan | null; errors: string[] }[], ctx: PlanContext = {}, opts: GenerateOptions = {}): Promise<PlanResult> {
   const ok = parts.filter((r) => r.plan) as { title: string; plan: Plan }[];
-  const plan = mergePlans(ok, request);
+  let plan = mergePlans(ok, request);
+  applyWrittenOptions(plan, request, inventory);
   applyWrittenRequirement(plan, request, inventory);
   const { validate } = makePlanner(inventory, request, ctx);
   // Up to 4 questions per part: a merged plan carries every part's.
-  const errors = [
-    ...parts.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this part (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`),
-    ...validate(plan).filter((e) => !(/^\d+ questions: keep at most 4/.test(e) && (plan.questions?.length ?? 0) <= 6)),
-  ];
+  const failed = parts.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this part (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`);
+  const check = (p: Plan) => validate(p).filter((e) => !(/^\d+ questions: keep at most 4/.test(e) && (p.questions?.length ?? 0) <= 6));
+  let errors = [...failed, ...check(plan)];
+  ({ plan, errors } = await fixMerged(inventory, request, plan, errors, failed.length, ctx, opts, check));
   dropRepeatedQuestions(plan);
   return { plan, errors, model: '' };
 }
@@ -537,12 +598,13 @@ async function planInParts(inventory: Inventory, request: string, split: import(
   );
   const ok = results.filter((r) => r.plan) as { title: string; plan: Plan; errors: string[]; model: string }[];
   opts.onStage?.('checking');
-  const plan = mergePlans(ok.map((r) => ({ title: r.title, plan: r.plan })), request);
+  let plan = mergePlans(ok.map((r) => ({ title: r.title, plan: r.plan })), request);
+  applyWrittenOptions(plan, request, inventory);
+  applyWrittenRequirement(plan, request, inventory);
   const { validate } = makePlanner(inventory, request, ctx);
-  const errors = [
-    ...results.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this form (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`),
-    ...validate(plan),
-  ];
+  const failed = results.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this form (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`);
+  let errors = [...failed, ...validate(plan)];
+  ({ plan, errors } = await fixMerged(inventory, request, plan, errors, failed.length, ctx, opts, validate));
   if (plan) dropRepeatedQuestions(plan);
   return { plan, errors, model: results[0]?.model ?? '' };
 }
@@ -581,6 +643,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
       // A revision is never a fresh plan, even when the plan it revises was (M12).
       if (revising && plan) delete plan.fresh;
       if (plan && Array.isArray(plan.steps)) plan.steps = orderByDependency(plan.steps);
+      if (plan && Array.isArray(plan.steps)) applyWrittenOptions(plan, request, inventory);
       if (plan && Array.isArray(plan.steps)) applyWrittenRequirement(plan, request, inventory);
     } catch {
       errors = ['The planner reply was not valid JSON.'];
