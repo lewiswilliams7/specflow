@@ -112,6 +112,9 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
         out.push(`${step.by === 'email' ? 'Emails' : 'Pop-up for'} ${list(who) || 'nobody'} when ${ev[step.event ?? ''] ?? step.event}${scope.length ? `, only for ${list(scope)}` : ''}`);
         break;
       }
+      case 'service_category':
+        out.push(step.parent ? `New subcategory under ${ref(step.parent)}` : 'New top-level service category');
+        break;
       case 'service':
         out.push(`New service in ${ref(step.service_category)}, logging ${ref(step.ticket_type)}${step.show_on_portal === false ? ', hidden from the portal' : ', on the portal'}${step.summary ? `: "${step.summary}"` : ''}`);
         break;

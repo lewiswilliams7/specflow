@@ -52,7 +52,8 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
     sla: inventory.slas, approval_process: inventory.approval_processes, approval_group: inventory.approval_groups, team: inventory.teams,
     category: (inventory as unknown as { categories?: string[] }).categories ?? [],
     service: (inventory as unknown as { services?: string[] }).services ?? [],
-  service_category: (inventory as unknown as { service_categories?: string[] }).service_categories ?? [],
+  // Paths in the inventory; plans reuse a category by the last part of its path (SC1).
+  service_category: ((inventory as unknown as { service_categories?: string[] }).service_categories ?? []).flatMap((p) => [p, p.split(' > ').at(-1)!.trim()]),
   organisation: (inventory as unknown as { organisations?: string[] }).organisations ?? [],
   working_hours: (inventory as unknown as { working_hours?: string[] }).working_hours ?? [],
   canned_text: (inventory as unknown as { canned_text?: string[] }).canned_text ?? [],

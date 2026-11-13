@@ -295,7 +295,9 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     if (kindOf(ref) !== kind) errors.push(`step "${s.id}": ${what} must be a ${kind} step (got "${ref}")`);
   };
   for (const s of steps) {
-    if (s.object === 'service_category' && s.action !== 'reuse') errors.push(`step "${s.id}": service categories can only be reused for now`);
+    // SC1 (round 36): categories can be created, each under a parent (or at the top level); never updated.
+    if (s.object === 'service_category' && s.action === 'update') errors.push(`step "${s.id}": service categories can be reused or created, not changed`);
+    if (s.object === 'service_category' && s.action === 'create' && s.parent) needKind(s, s.parent, 'service_category', 'parent');
     if (s.object === 'service' && s.action === 'create') {
       needKind(s, s.service_category, 'service_category', 'service_category');
       needKind(s, s.ticket_type, 'ticket_type', 'ticket_type');

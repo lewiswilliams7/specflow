@@ -102,7 +102,16 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
     agent_notifications: await list('Notification').then((r) => r.map(nameOf), () => [] as string[]),
     // Round 30: names for the catalogue, imports, working hours and canned text (reuse before create).
     services: await list('Service').then((r) => r.map(nameOf), () => [] as string[]),
-    service_categories: await list('ServiceCategory').then((r) => r.map((x) => nameOf(x).trim()), () => [] as string[]),
+    // Paths ("HR > Filing"), so plans can place a service under the right parent (round 36: parent_id, 0 = top level).
+    // Port of the spike's inventory.
+    service_categories: await list('ServiceCategory').then((r) => {
+      const byId = new Map(r.map((x) => [Number(x.id), x]));
+      const path = (x: (typeof r)[number], depth = 0): string => {
+        const up = byId.get(Number(x.parent_id ?? 0));
+        return up && depth < 8 ? `${path(up, depth + 1)} > ${nameOf(x).trim()}` : nameOf(x).trim();
+      };
+      return r.map((x) => path(x));
+    }, () => [] as string[]),
     organisations: await list('Client').then((r) => r.map(nameOf), () => [] as string[]),
     sites: await list('Site').then((r) => r.map(nameOf), () => [] as string[]),
     working_hours: await list('Workday').then((r) => r.map(nameOf), () => [] as string[]),

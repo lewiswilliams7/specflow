@@ -189,7 +189,12 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         } else {
           if (warnings.length && !allowWarnings) throw new Error(`stopped before writing: ${warnings.join('; ')}`);
           attempted = [{ id: target.id, ...changes }];
-          await halo.post(`/${t.resource}`, attempted as unknown[]);
+          // Some keys go in a save of their own, after the rest (SV2: a service's other settings weren't kept when sent
+          // together with its Service Request Details).
+          const alone = (t.saveAlone ?? []).filter((k) => k in changes);
+          const rest = Object.fromEntries(Object.entries(changes).filter(([k]) => !alone.includes(k)));
+          if (Object.keys(rest).length) await halo.post(`/${t.resource}`, [{ id: target.id, ...rest }]);
+          for (const k of alone) await halo.post(`/${t.resource}`, [{ id: target.id, [k]: changes[k] }]);
           const back = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
           const bad = t.verifyUpdate
             ? t.verifyUpdate(back, changes, step, refs)

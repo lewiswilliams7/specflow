@@ -1161,6 +1161,8 @@ export interface Translator {
   prepare?: (step: PlanStep, refs: Refs) => Promise<void>;
   /** Only reuse is supported (create refused with a warning). */
   reuseOnly?: boolean;
+  /** Update keys saved in a request of their own, after the others (SV2). */
+  saveAlone?: string[];
 }
 
 // ---------- helpers ----------
@@ -1788,6 +1790,18 @@ export const translators: Record<PlanStep['object'], Translator> = {
       return p;
     },
     afterCreate: (id, sent) => (sent._enact_after ? { id, ...(sent._enact_after as Row) } : null),
+    saveAlone: ['service_request_details'],
+    // Halo adds its own keys and ids to each Service Request Details row: check the ticket types are there, not the JSON.
+    verifyUpdate: (back, changes) => {
+      const out: string[] = [];
+      for (const [k, v] of Object.entries(changes)) {
+        if (k === SPIKE_MAP.service.requestDetails) {
+          const got = new Set(((back[k] as Row[]) ?? []).map((r) => String(r.servicedetail_requesttypeid)));
+          for (const r of (v as Row[]) ?? []) if (!got.has(String(r.servicedetail_requesttypeid))) out.push(`Service Request Details has no row for ticket type ${r.servicedetail_requesttypeid}`);
+        } else if (JSON.stringify(back[k]) !== JSON.stringify(v)) out.push(`${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(v)}`);
+      }
+      return out;
+    },
     update: (step, refs, warn, current) => {
       const m = SPIKE_MAP.service;
       const st = step.set ?? {};
