@@ -41,7 +41,7 @@
  *
  * Round 36 (13 Nov): round 35 found zz Enact r31 form retired (the enterprise test retired it), so its tests skipped.
  * A fresh zz form, then: a request type added to a service's Service Request Details, read-only (4) by the builder,
- * and a service subcategory created under an existing category.
+ * a service subcategory created under an existing category, and the per-form hint and label overrides (Lewis, 13 Nov).
  *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
@@ -261,6 +261,38 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     const fid = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR33Locked')?.id);
     const row = tt ? (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === fid) : null;
     note('fresh form', 'locked row', row ? pick(row, /^(endusernew|technew|enduserdetail|techdetail)$/) : null);
+  });
+
+  // Lewis (13 Nov): each form row has "Override Field Hint" and "Override display label" in Halo's screen. Round 35 saw no such
+  // key on a row, likely because Halo leaves empty settings out. So: find any form where one is set, then try names on a zz row.
+  const BASE_ROW = /^(copytochildonupdate|id|rtid|usage|fieldid|seq|tableid|groupid|endusernew|enduserdetail|supplierdetail|technew|techdetail|fieldinfo|technewlocation|restrictupdate|techtab_id|techtab_name|copytochild|copytorelated|restrictread|techaction|enduseraction|endusercheckboxmandatory|group)$/;
+  await area('row overrides', async () => {
+    const A = 'row overrides';
+    const extra: Record<string, unknown> = {};
+    for (const t of (await list('TicketType')).rows.filter(own)) {
+      for (const r of ((await detail('TicketType', t.id))?.fields as Row[]) ?? []) {
+        for (const [k, v] of Object.entries(r)) if (!BASE_ROW.test(k) && !(k in extra)) extra[k] = { form: nameOf(t), fieldid: r.fieldid, value: short(v) };
+      }
+    }
+    note(A, 'row keys beyond the usual set, across Halo forms', extra);
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
+    const fid = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR31Choice')?.id);
+    if (!apply || !tt || !fid) { note(A, 'skipped', { form: !!tt, field: !!fid }); return; }
+    const rows = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).map(({ group: _g, fieldinfo: _f, ...rest }) => rest as Row);
+    const row = rows.find((r) => Number(r.fieldid) === fid);
+    if (!row) { note(A, 'skipped', 'choice field not on the r36 form'); return; }
+    // Each candidate gets its own name as the value, so the read-back shows exactly which key Halo kept.
+    const cands = ['hint', 'fieldhint', 'field_hint', 'hint_override', 'override_hint', 'overridehint', 'hintoverride', 'fieldhint_override', 'hintoverride_text',
+      'label', 'fieldlabel', 'field_label', 'label_override', 'override_label', 'overridelabel', 'labeloverride', 'display_label', 'displaylabel', 'overridedisplaylabel', 'override_display_label'];
+    for (const c of cands) row[c] = `zz r36 ${c}`;
+    try {
+      await runtime().halo.post('/TicketType', [{ id: Number(tt.id), fields: rows }]);
+      const back = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === fid);
+      const kept = Object.fromEntries(Object.entries(back ?? {}).filter(([, v]) => typeof v === 'string' && v.startsWith('zz r36 ')));
+      note(A, 'candidate keys Halo kept', kept);
+      note(A, 'row read back (keys beyond the usual set)', Object.fromEntries(Object.entries(back ?? {}).filter(([k]) => !BASE_ROW.test(k))));
+      summary.push(`· form row overrides: ${Object.keys(kept).length ? `kept ${Object.keys(kept).join(', ')}. Open zz Enact r36 form in Halo and check which box shows which text` : 'no candidate kept'}`);
+    } catch (e) { note(A, 'error', err(e)); }
   });
 
   await area('service request details', async () => {
