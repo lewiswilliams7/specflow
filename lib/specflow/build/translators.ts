@@ -23,6 +23,9 @@ export const SPIKE_MAP = {
     multiselect: 3,
     date: 4,
     checkbox: 6,
+    /** Round 38: Halo's own rich text fields are type 10 (CFBridgeDescriptionRich 267, fchangeinformationhtml -82).
+     *  Built by the builder in round 39. */
+    richtext: 10,
   } as Record<string, number | null>,
 
   field: {
@@ -391,7 +394,7 @@ export const FEATURES: Feature[] = [
     key: 'services',
     name: 'services in the service catalogue',
     sections: ['service', 'serviceCategory', 'builderProof'],
-    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { summary?, ticket_type?, service_category?, show_on_portal? }. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
+    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { name? (rename), summary?, ticket_type?, service_category?, show_on_portal? }. A service category can be renamed: service_category update set: { name }. Halo allows at most THREE levels of service categories (SC2, e.g. HR > Recruitment > Onboarding): a deeper path goes in its third level, and say so in assumptions. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
   },
   {
     key: 'imports',
@@ -987,6 +990,8 @@ export interface PlanStep {
   approvers?: Approver[];
   /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
   set?: {
+    /** service / service_category: a new name (round 38: both kept a rename). */
+    name?: string;
     // ticket_type
     workflow?: string;
     approval?: string;
@@ -1764,6 +1769,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
       set(p, SPIKE_MAP.serviceCategory.parent, step.parent ? refs[step.parent]?.id : 0, 'service category parent', warn);
       return p;
     },
+    // Round 38: category 26 kept a rename. Moving to another parent isn't proven (round 39), so only the name changes.
+    update: (step, _refs, warn) => {
+      if (step.set?.name) return { name: step.set.name };
+      warn('service category update: only a rename is supported');
+      return {};
+    },
     verifyCreate: (back, step, refs) => {
       const k = SPIKE_MAP.serviceCategory.parent;
       const want = step.parent ? refs?.[step.parent]?.id : 0;
@@ -1812,6 +1823,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const have = ((current?.[m.requestDetails] as Row[]) ?? []);
         if (!have.some((r) => String(r.servicedetail_requesttypeid) === String(tt))) out[m.requestDetails] = [...have, requestRow(tt)];
       }
+      if (st.name) out.name = st.name; // round 38: zz service 170 kept a rename
       if (st.summary !== undefined && m.summary) out[m.summary] = st.summary;
       if (st.ticket_type && m.ticketType) out[m.ticketType] = refs[st.ticket_type]?.id;
       if (st.service_category && m.category) out[m.category] = refs[st.service_category]?.id;

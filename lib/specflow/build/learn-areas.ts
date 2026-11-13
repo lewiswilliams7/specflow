@@ -50,6 +50,9 @@
  * Round 38 (13 Nov): what Compleat still needs by hand. Field types for rich text, tables and attachments; the ticket type's
  * attachment settings; renaming a service; moving a service category; a live list of Halo's departments.
  *
+ * Round 39 (13 Nov): a rich text field (type 10) by the builder; a form's attachment settings (allowattachments,
+ * minattachments); moving a service category to another parent (round 38's move hit the 3-tier limit, SC2).
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -60,7 +63,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 38;
+export const ROUND = 39;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -259,54 +262,34 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('field types', async () => {
-    const A = 'field types';
-    const fields = (await list('FieldInfo')).rows;
-    // Every type Halo uses, with a few example fields, so rich text / table / attachment can be named from evidence.
-    const byType: Record<string, string[]> = {};
-    for (const f of fields) { const k = `type ${f.type ?? '?'} / inputtype ${f.inputtype ?? '?'}`; (byType[k] ??= []).length < 4 && byType[k].push(`${f.id} ${f.name} "${f.label ?? ''}"`); }
-    note(A, 'type / inputtype with examples', byType);
-    const look = fields.filter((f) => /rich|table|attach|upload|signature|html|grid/i.test(`${f.name} ${f.label}`)).slice(0, 8);
-    for (const f of look) note(A, `${f.id} ${f.name}`, pick(await detail('FieldInfo', f.id), /^(type|inputtype|name|label|.*table.*|.*column.*|.*rich.*|.*html.*|.*attach.*|.*upload.*|.*file.*)$/i));
+
+  await area('rich text', async () => {
+    await prove('a rich text field on a zz form', { request: 'Enact learning run 39', steps: [
+      { id: 'r', object: 'field', action: 'create', name: 'CFzzEnactR39Rich', label: 'zz Enact r39 rich text', type: 'richtext', hint: 'zz rich text test' },
+      { id: 'form', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r36 form' }, set: { add_fields: [{ ref: 'r' }] } },
+    ] } as unknown as Plan);
+    const f = (await list('FieldInfo')).rows.find((x) => x.name === 'CFzzEnactR39Rich');
+    note('rich text', 'read back', f ? pick(await detail('FieldInfo', f.id), /^(id|name|label|type|inputtype|hint)$/) : 'not found');
+    if (f) summary.push('· rich text: open zz Enact r36 form in Halo and check "zz Enact r39 rich text" has the formatting toolbar');
   });
 
-  await area('ticket type attachments', async () => {
-    const A = 'ticket type attachments';
-    const tt = (await list('TicketType')).rows.filter(own);
-    const seen: Record<string, unknown> = {};
-    for (const t of tt.slice(0, 12)) {
-      const d = await detail('TicketType', t.id);
-      for (const [k, v] of Object.entries(d ?? {})) if (/attach|upload|file|document/i.test(k) && !(k in seen)) seen[k] = { form: nameOf(t), value: short(v) };
-    }
-    note(A, 'attachment-like keys across Halo forms', seen);
+  await area('attachments', async () => {
+    const A = 'attachments';
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
+    if (!tt) { note(A, 'skipped', 'zz Enact r36 form missing'); return; }
+    note(A, 'before', pick(await detail('TicketType', tt.id), /attach/i));
+    await update(A, 'allow attachments', 'TicketType', Number(tt.id), { allowattachments: true });
+    await update(A, 'at least one attachment', 'TicketType', Number(tt.id), { minattachments: 1 });
+    summary.push('· attachments: on the Concord portal, log a zz Enact r36 form ticket without a file and check it asks for one');
   });
 
-  await area('rename and move', async () => {
-    const A = 'rename and move';
-    const zz = (await list('Service')).rows.find((r) => nameOf(r) === 'zz Enact r30 service');
-    if (zz) {
-      await update(A, 'service rename', 'Service', Number(zz.id), { name: 'zz Enact r38 service renamed' });
-      await update(A, 'service rename back', 'Service', Number(zz.id), { name: 'zz Enact r30 service' });
-    } else note(A, 'service skipped', 'zz Enact r30 service missing');
-    const cats = (await list('ServiceCategory')).rows;
-    const sub = cats.find((c) => nameOf(c) === 'zz Enact r36 subcategory');
-    const other = cats.find((c) => own(c) && Number(c.id) !== Number(sub?.parent_id));
-    if (sub && other) {
-      const was = Number(sub.parent_id ?? 0);
-      await update(A, `category move to ${other.id} ${nameOf(other)}`, 'ServiceCategory', Number(sub.id), { parent_id: Number(other.id) });
-      await update(A, 'category move back', 'ServiceCategory', Number(sub.id), { parent_id: was });
-      await update(A, 'category rename', 'ServiceCategory', Number(sub.id), { name: 'zz Enact r38 subcategory renamed' });
-      await update(A, 'category rename back', 'ServiceCategory', Number(sub.id), { name: 'zz Enact r36 subcategory' });
-    } else note(A, 'category skipped', { sub: !!sub, other: !!other });
-  });
-
-  await area('departments', async () => {
-    const A = 'departments';
-    const d = await discover(A, 'departments', ['Department', 'Departments']);
-    if (d?.rows.length) note(A, 'names', d.rows.slice(0, 10).map((r) => `${r.id} ${nameOf(r)}`));
-    // Halo's own live-list fields: the SQL they use, to see whether one reads departments.
-    const dyn = (await list('FieldInfo')).rows.filter((f) => /sql|lookup/i.test(JSON.stringify(pick(f, /^(type|inputtype|.*sql.*)$/i))));
-    for (const f of dyn.slice(0, 6)) note(A, `live list ${f.id} ${f.name}`, pick(await detail('FieldInfo', f.id), /sql|lookup|type/i));
+  await area('category move', async () => {
+    const A = 'category move';
+    const sub = (await list('ServiceCategory')).rows.find((c) => nameOf(c) === 'zz Enact r36 subcategory');
+    if (!sub) { note(A, 'skipped', 'zz Enact r36 subcategory missing'); return; }
+    const was = Number(sub.parent_id ?? 0);
+    await update(A, 'move to the top level', 'ServiceCategory', Number(sub.id), { parent_id: 0 });
+    await update(A, 'move back', 'ServiceCategory', Number(sub.id), { parent_id: was });
   });
 
   return { out, summary };

@@ -81,7 +81,7 @@ export function makePlanner(inventory: Inventory, request: string, ctx: PlanCont
   - reuse: { "match": { "name": exact existing name from the inventory } }. Use for anything that already exists.
   - create needs "name". Optional "based_on": exact name of an existing record of the same kind to copy settings from (choose a sensible, plain one; say which in assumptions).
   Objects and their create properties:
-  - field: name "CF"+PascalCase (unique, not in inventory), label, type: text|memo|date|dropdown|checkbox|multiselect, options: string[] (dropdown/multiselect only)
+  - field: name "CF"+PascalCase (unique, not in inventory), label, type: text|memo|richtext|date|dropdown|checkbox|multiselect (richtext = formatted text, e.g. a design that says "Rich text"), options: string[] (dropdown/multiselect only)
   - field_group: name, label (section header), fields: [{ref, mandatory?}]
   - team: name, members: [agent step refs], department_of: ref of a REUSED team whose department it joins (use with based_on that team). Always set both, or the team lands in a random department.
   - agent: REUSE ONLY (people with licences; never create)

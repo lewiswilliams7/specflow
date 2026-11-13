@@ -296,7 +296,16 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   };
   for (const s of steps) {
     // SC1 (round 36): categories can be created, each under a parent (or at the top level); never updated.
-    if (s.object === 'service_category' && s.action === 'update') errors.push(`step "${s.id}": service categories can be reused or created, not changed`);
+    if (s.object === 'service_category' && s.action === 'update' && !(s.set?.name && Object.keys(s.set).length === 1)) errors.push(`step "${s.id}": a service category can only be renamed (set: { name })`);
+    // SC2 (round 38): "The maximum number of Service Category tiers is 3".
+    if (s.object === 'service_category' && s.action !== 'update') {
+      const depth = (st: PlanStep | undefined, n = 0): number => {
+        if (!st || n > 10) return n;
+        if (st.action === 'reuse') return n + String(st.match?.name ?? '').split(' > ').length;
+        return st.parent ? depth(steps.find((x) => x.id === st.parent), n + 1) : n + 1;
+      };
+      if (depth(s) > 3) errors.push(`step "${s.id}": "${s.name ?? s.match?.name}" would be a 4th level of service categories; Halo allows 3 (rule SC2). Put the service in the third level instead.`);
+    }
     if (s.object === 'service_category' && s.action === 'create' && s.parent) needKind(s, s.parent, 'service_category', 'parent');
     if (s.object === 'service' && s.action === 'create') {
       needKind(s, s.service_category, 'service_category', 'service_category');
