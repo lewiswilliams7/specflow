@@ -159,6 +159,10 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
   const st = step.set ?? {};
   for (const f of st.read_only ?? []) out.push(`make ${ref(f)} read-only`);
   if (st.retire) out.push('retire it (hidden from lists and the portal; nothing deleted)');
+  if (st.name) out.push(`rename to "${st.name}"`);
+  if (st.top_level) out.push('move to the top level');
+  if (st.parent) out.push(`move under ${ref(st.parent)}`);
+  if (st.attachments) out.push(st.attachments.allow === false ? 'turn attachments off' : st.attachments.min ? `require at least ${st.attachments.min} attachment${st.attachments.min === 1 ? '' : 's'}` : 'allow attachments (not required)');
   for (const f of st.remove_fields ?? []) out.push(`take ${ref(f)} off the form (the field stays in Halo)`);
   if (st.summary !== undefined) out.push(`summary "${st.summary}"`);
   if (st.ticket_type) out.push(`log ${ref(st.ticket_type)}`);

@@ -227,7 +227,7 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
                 <details key={`${g.kind}-${g.items[0].id}`} className={`change-group ${g.items.every((x) => x.action === 'create') ? 'add' : 'change'}`}>
                   <summary>
                     <span className="sign">{g.items.every((x) => x.action === 'create') ? '+' : '~'}</span>
-                    <span>{g.items.length} {g.items.every((x) => x.action === 'create') ? 'new ' : ''}{KIND[g.kind]}{/s$/.test(KIND[g.kind]) ? '' : 's'}: {g.items.slice(0, 4).map((x) => title(x, inventory)).join(', ')}…</span>
+                    <span>{g.items.length} {g.items.every((x) => x.action === 'create') ? 'new ' : ''}{/s$/.test(KIND[g.kind]) ? KIND[g.kind] : /y$/.test(KIND[g.kind]) ? `${KIND[g.kind].slice(0, -1)}ies` : `${KIND[g.kind]}s`}: {g.items.slice(0, 4).map((x) => title(x, inventory)).join(', ')}…</span>
                     <IconChevron className="chev" size={14} />
                   </summary>
                   {items}

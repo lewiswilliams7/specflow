@@ -432,11 +432,17 @@ export const FEATURES: Feature[] = [
     prompt: `- kb_article: create { name (the article title), body (the article in plain words, paragraphs separated by \n\n), faq_list: ref of a REUSED faq_list step (exact name from inventory.faq_lists) }. Write only what the brief or an attached document says; never invent steps or facts. Reuse an article already in inventory.kb_articles.`,
   },
   {
+    // Round 39 (T9): zz Enact r36 form kept allowattachments and minattachments.
+    key: 'attachments',
+    name: 'attachments on a form',
+    sections: ['attachments'],
+    prompt: `- Attachments are a setting on the form, not a field (T9): ticket_type update (or create) set: { attachments: { allow: true, min: 0 } }; min: 1 when the request says an attachment is required on EVERY ticket (a conditional or optional upload stays min 0, and say in assumptions it can't be required only sometimes). Never create a field for an upload.`,
+  },
+  {
     key: 'read_only',
     name: 'read-only fields on a form',
     sections: ['readOnly'],
-    prompt: `- Attachments are a setting on the form, not a field (T9): ticket_type update (or create) set: { attachments: { allow: true, min: 0 } }; min: 1 when the request says an attachment is required on EVERY ticket (a conditional or optional upload stays min 0, and say in assumptions it can't be required only sometimes). Never create a field for an upload.
-- A field that should show but not be typed in (e.g. filled in automatically): ticket_type update set: { read_only: [field refs] }, in the SAME step as the add_fields that puts a new field on the form.`,
+    prompt: `- A field that should show but not be typed in (e.g. filled in automatically): ticket_type update set: { read_only: [field refs] }, in the SAME step as the add_fields that puts a new field on the form.`,
   },
   {
     key: 'roles',
@@ -549,6 +555,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'lookup_value') keys.add('lookup_values');
   if (step.object === 'kb_article' || step.object === 'faq_list') keys.add('kb_articles');
   if (step.set?.read_only?.length) keys.add('read_only');
+  if (step.set?.attachments) keys.add('attachments');
   if (step.object === 'role' && step.action === 'create') keys.add('roles');
   if (step.object === 'asset_type' || step.object === 'asset_group') keys.add('asset_types');
   if (step.asset_fields?.length) keys.add('asset_fields');
