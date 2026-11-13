@@ -114,7 +114,7 @@ ${readyFeaturePrompt()}
     - partial: it exists but is missing something. Reuse it and add only the missing pieces (or an update step).
     - missing: create it.
     Never create a parallel copy of something that exists ("v2", "(People Ops)", "New ..."): update it. If the change isn't updatable, say so in unsupported.
-    A field matches only if its name/label fits the request AND, for a dropdown or multi-select, its options are exactly the ones asked for (same wording; extra existing options are fine only if the request's are all there). Different options: create a new field. Never map the request's options onto different existing ones. Enact can't yet set a form's own help text for a shared field (the override key is being learned), so when the request gives a field help text that differs from an existing field's (or from the same field on another form in this request), create a separate field with that help text instead of reusing.
+    A field matches only if its name/label fits the request AND, for a dropdown or multi-select, its options are exactly the ones asked for (same wording; extra existing options are fine only if the request's are all there). Different options: create a new field. Never map the request's options onto different existing ones. Help text never decides reuse: a form can show its own help text for a shared field (Override Field Hint, rule F14), so reuse the field and put the form's hint on its field entry ({ ref, mandatory, hint }, or set: { field_hints } for a field already on the form).
   - Reuse what exists (exact names from the inventory), but only when it matches what the request asks for. Never create something whose name matches an existing one ignoring case (CFLaptopType vs CFlaptopType). Never invent names of existing things: anything not in the inventory must be created by an earlier step.
   - When the request describes stages a ticket moves through, build them: copy a workflow and add the stages with insert_steps.
   - based_on must name an EXISTING record, never the thing being created. Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
@@ -393,11 +393,11 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
   const keyOf = (s: PlanStep) => {
     if (s.action === 'reuse') return `reuse|${s.object}|${String(s.match?.name ?? '').toLowerCase()}`;
     if (s.action !== 'create') return null;
-    // Help text is part of a field (Halo keeps one hint per field), so the same field with a different hint on another
-    // form is a separate field (13 Nov: Payroll and Probation showed Benefits & Reward's Site / Location hint).
-    if (s.object === 'field') return `field|${String(s.label ?? s.name).trim().toLowerCase()}|${s.type}|${[...(s.options ?? [])].map((o) => o.toLowerCase()).sort().join(';')}|${s.dynamic?.list ?? ''}|${String(s.hint ?? '').trim().toLowerCase()}`;
+    // Help text isn't part of the key: a form overrides a shared field's hint on its own row (F14, round 36).
+    if (s.object === 'field') return `field|${String(s.label ?? s.name).trim().toLowerCase()}|${s.type}|${[...(s.options ?? [])].map((o) => o.toLowerCase()).sort().join(';')}|${s.dynamic?.list ?? ''}`;
     return `${s.object}|${String(s.name ?? '').trim().toLowerCase()}`;
   };
+  const formHint = new Map<string, string>();
   parts.forEach(({ title, plan }, i) => {
     const ids = new Map(plan.steps.map((s) => [s.id, `f${i + 1}_${s.id}`] as [string, string]));
     for (const raw of plan.steps) {
@@ -405,6 +405,11 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
       s.id = ids.get(raw.id)!;
       const key = keyOf(s);
       if (key && seen.has(key)) {
+        // Same field in another part with its own help text: that part's forms show it as their override (F14).
+        if (s.object === 'field') {
+          const kept = steps.find((x) => x.id === seen.get(key));
+          if (s.hint !== undefined && String(s.hint).trim() !== String(kept?.hint ?? '').trim()) formHint.set(s.id, s.hint);
+        }
         // A ticket type split across parts (one long form): one ticket type with every part's fields, in order.
         if (s.object === 'ticket_type' && s.action === 'create' && s.fields?.length) {
           const kept = steps.find((x) => x.id === seen.get(key));
@@ -422,7 +427,13 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
       steps.push(s);
     }
   });
-  const deduped = steps.map((s) => renameRefs(s, alias)).map((s) => {
+  const withHint = <T extends { ref: string; hint?: string }>(f: T): T => (formHint.has(f.ref) && f.hint === undefined ? { ...f, hint: formHint.get(f.ref) } : f);
+  const hinted = steps.map((s) => (s.object !== 'ticket_type' ? s : {
+    ...s,
+    ...(s.fields ? { fields: s.fields.map(withHint) } : {}),
+    ...(s.set?.add_fields ? { set: { ...s.set, add_fields: s.set.add_fields.map(withHint) } } : {}),
+  }));
+  const deduped = hinted.map((s) => renameRefs(s, alias)).map((s) => {
     // A field merged into one already on the form appears once.
     if (!s.fields?.length) return s;
     const at = new Set<string>();

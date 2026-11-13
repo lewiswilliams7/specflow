@@ -224,7 +224,7 @@ export default function Home() {
                   <li>Workflow stages, actions and statuses that pause the SLA</li>
                   <li>Teams and approval groups, with members</li>
                   <li>Fields that only show for certain answers <span>and are required only when shown</span></li>
-                  <li>Help text on every field <span>word for word from the design</span></li>
+                  <li>Help text on every field <span>word for word, and its own on each form</span></li>
                   <li>Live dropdowns of Halo users, sites or organisations <span>made from a list field the instance already has</span></li>
                   <li>Ticket rules <span>routing and priority based on the ticket type and answers</span></li>
                   <li>Email templates in the client&apos;s brand <span>logo, colour, footer and Halo&apos;s own variables</span></li>
@@ -233,7 +233,7 @@ export default function Home() {
                   <li>Child tickets raised when a ticket is logged</li>
                   <li>Categories, and ticket rules that set them</li>
                   <li>Agent notifications for a team, scoped to a ticket type</li>
-                  <li>Services in the portal catalogue <span>with their summary and the ticket type they log</span></li>
+                  <li>Services in the portal catalogue <span>with their summary, ticket type and Service Request Details, under the right category and subcategory</span></li>
                   <li>Users, sites and organisations from a list <span>matched on email and name, so a re-run never duplicates</span></li>
                   <li>Working hours and bank holidays</li>
                   <li>Knowledge base articles <span>in the FAQ list you name</span></li>

@@ -243,7 +243,15 @@ export const SPIKE_MAP = {
    *  apply, read-back, re-run without duplicates). Rounds 28-29 proved the payloads by hand-written requests only. */
   builderProof: { round30: 'built' as string | null }, // round 30 (Concord, 12 Nov): site 22, user 60, type 57, service 170, workday 4, holidays b12175bc/d079b70c, canned text 31 built and read back; re-run reused all 13; type 57 show rule + field removed, then retired
   /** Services (round 29, Concord trial): service 169 made from these keys alone and kept every one. */
+  /** Form rows (round 36, Concord 13 Nov): zz Enact r36 form row kept override_hint, Halo's "Override Field Hint" (Lewis:
+   *  the per-form hint, set where visibility is set). The label override is likely override_fieldname (seen empty on Halo's
+   *  own Incident rows) but no write has proven it yet. */
+  formRow: { hintOverride: 'override_hint' as string | null, labelOverride: null as string | null },
+  /** Service categories (round 36): category 26 { name, parent_id: 8 } kept. parent_id 0 = top level. */
+  serviceCategory: { parent: 'parent_id' as string | null },
   service: {
+    /** Round 36: service 170 kept a service_request_details row for ticket type 65 (shape from Halo's own services 122 and 71). */
+    requestDetails: 'service_request_details' as string | null,
     category: 'service_category_id' as string | null,
     ticketType: 'service_tickettype_id' as string | null,
     summary: 'summary' as string | null,
@@ -370,7 +378,7 @@ export const FEATURES: Feature[] = [
     key: 'field_hints',
     name: 'field help text (hints)',
     sections: ['fieldHint'],
-    prompt: `- field create may have hint: the help text Halo shows with the field, on the agent form and the portal. Use the brief's help text word for word. field update set: { hint } changes it on an existing field. Halo keeps ONE hint per field, not per form: if a shared field has different help text on different forms, use the most general one and say which in assumptions. A field that is also on ticket types the brief doesn't mention: say so in assumptions, since its hint changes there too.`,
+    prompt: `- field create may have hint: the help text Halo shows with the field, on the agent form and the portal. Use the brief's help text word for word. field update set: { hint } changes it on an existing field. A form can show its OWN help text for a shared field (Halo's Override Field Hint): put hint on that form's field entry (ticket_type create fields: [{ ref, mandatory, hint }], update add_fields: [{ ref, hint }], or update set: { field_hints: [{ ref, hint }] } for a field already on the form). So REUSE the field and give each form its own hint; never make a second field just for different help text. Changing the field's own hint (field update set: { hint }) changes it on every form without an override.`,
   },
   {
     key: 'dynamic_lists',
@@ -382,8 +390,8 @@ export const FEATURES: Feature[] = [
   {
     key: 'services',
     name: 'services in the service catalogue',
-    sections: ['service', 'builderProof'],
-    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a REUSED service_category step (inventory.service_categories), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { summary?, ticket_type?, service_category?, show_on_portal? }. service_category: REUSE ONLY, by exact name; a category that doesn't exist goes in unsupported. Check inventory.services first and update the one that exists.`,
+    sections: ['service', 'serviceCategory', 'builderProof'],
+    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse by the LAST part, match: { name: "Child" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { summary?, ticket_type?, service_category?, show_on_portal? }. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says; when that category doesn't exist, create it UNDER the deepest existing category of its path: service_category create { name, parent: ref of a reused service_category } (no parent = top level). Never create a category that already exists.`,
   },
   {
     key: 'imports',
@@ -627,6 +635,11 @@ function checkRemoved(back: unknown, removed: string[] | undefined, refs: Refs |
   return removed.filter((r) => ((back as Row[]) ?? []).some((b) => Number(b.fieldid) === Number(refs[r]?.id))).map((r) => `${what}: ${refs[r]?.row?.label ?? refs[r]?.name ?? r} is still on it after saving`);
 }
 
+/** A Service Request Details row: the shape of Halo's own (services 122 and 71, round 35), kept on service 170 (round 36). */
+function requestRow(ticketTypeId: unknown): Row {
+  return { servicedetail_type: 0, servicedetail_requesttypeid: ticketTypeId, servicedetail_label: 'Request this Service', servicedetail_shownewreqscreen: true, icon: 'plus-circle', sequenceid: 10, allow_all_items: true };
+}
+
 function keepRows(rows: unknown): Row[] {
   return ((rows as Row[]) ?? []).map((r) => {
     const { group: _g, fieldinfo: _f, ...rest } = r;
@@ -709,6 +722,8 @@ function checkFieldRows(back: unknown, sent: unknown, what: string): string[] {
     const b = got.find((g) => Number(g[key]) === Number(r[key]) && (key === 'groupid' ? Number(g.fieldid) === 0 : true));
     if (!b) { out.push(`${what}: ${key} ${r[key]} not on the form after saving`); continue; }
     for (const k of m.mandatoryKeys ?? []) if (r[k] !== undefined && Number(b[k]) !== Number(r[k])) out.push(`${what}: ${key} ${r[key]} ${k} is ${b[k]}, wanted ${r[k]}`);
+    const hk = SPIKE_MAP.formRow.hintOverride;
+    if (hk && r[hk] !== undefined && String(b[hk] ?? '') !== String(r[hk])) out.push(`${what}: ${key} ${r[key]} help text is ${JSON.stringify(b[hk] ?? '')}, wanted ${JSON.stringify(r[hk])}`);
   }
   return out;
 }
@@ -911,6 +926,8 @@ export interface PlanStep {
   ticket_type?: string;
   service_category?: string;
   show_on_portal?: boolean;
+  /** service_category: the category it sits under (a service_category ref); none = top level. */
+  parent?: string;
   /** user: firstname, surname, email, site ref. site: organisation ref. */
   firstname?: string;
   surname?: string;
@@ -941,7 +958,7 @@ export interface PlanStep {
   resolve_days?: number;
   approver?: string;
   match?: { name: string };
-  fields?: { ref: string; mandatory?: boolean }[];
+  fields?: { ref: string; mandatory?: boolean; hint?: string }[];
   team?: string;
   sla?: string;
   approval?: string;
@@ -976,7 +993,9 @@ export interface PlanStep {
     team?: string;
     sla?: string;
     add_groups?: string[];
-    add_fields?: { ref: string; mandatory?: boolean }[];
+    add_fields?: { ref: string; mandatory?: boolean; hint?: string }[];
+    /** ticket_type: this form's own help text for fields already on it (Halo's Override Field Hint, rule F14). */
+    field_hints?: { ref: string; hint: string }[];
     /** ticket_type: add back Halo's standard fields (Details, Followers...) from this REUSED ticket type (rule T5). */
     copy_standard_fields_from?: string;
     // ticket_type (its own loose fields) and field_group: change mandatory on fields already there
@@ -1548,12 +1567,20 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (st.approval) out.approval_process_id = refs[st.approval]?.id;
       if (st.team && m.teamName) out[m.teamName] = refs[st.team]?.name; // rule T1: team by NAME
       if (st.sla && m.sla) out[m.sla] = refs[st.sla]?.id;
-      if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length || st.copy_standard_fields_from || st.replace_fields?.length) {
+      if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length || st.copy_standard_fields_from || st.replace_fields?.length || st.field_hints?.length) {
         // Rule U2 (2026-10-23): the form is one list. Send ALL existing rows back (ids kept) plus the new ones.
         const rows = keepRows(current[m.fields as string]);
         if (st.replace_fields?.length) replaceRows(rows, st.replace_fields, refs, warn);
         const shape: Row = { usage: 0, groupid: 0, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 };
         editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn, formLabels(current), rowNames(current));
+        // Rule F14: this form's own help text for a shared field (Override Field Hint on the row).
+        for (const h of [...(st.add_fields ?? []).filter((f) => f.hint !== undefined), ...(st.field_hints ?? [])]) {
+          const hk = SPIKE_MAP.formRow.hintOverride;
+          if (!hk) { gap('form help text override', warn); break; }
+          const row = rows.find((x) => String(x.fieldid) === String(refs[h.ref]?.id));
+          if (!row) { warn(`field_hints: ${refs[h.ref]?.row?.label ?? h.ref} isn't directly on this form`); continue; }
+          row[hk] = h.hint;
+        }
         let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
         for (const g of st.add_groups ?? []) {
           const gid = Number(refs[g]?.id);
@@ -1701,6 +1728,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
             techaction: 1,
           };
           for (const key of m.mandatoryKeys ?? []) row[key] = level;
+          if (f.hint !== undefined) { if (SPIKE_MAP.formRow.hintOverride) row[SPIKE_MAP.formRow.hintOverride] = f.hint; else gap('form help text override', warn); }
           return row;
         });
         // Field groups attach as rows with groupid and fieldid 0 (evidence: tickettype-36 rows 10420/10424).
@@ -1721,10 +1749,24 @@ export const translators: Record<PlanStep['object'], Translator> = {
   // ---------- Round 30: minimal-payload objects (never from a copy, rule S1b) ----------
 
   service_category: {
+    // Round 36: category 26 { name, parent_id } kept exactly. Matched by name under the same parent.
     resource: 'ServiceCategory',
     template: '',
-    reuseOnly: true,
-    build: (_step, _refs, warn) => { warn('service categories can only be reused for now'); return {}; },
+    findExisting: async (step, refs) => {
+      const parent = step.parent ? Number(refs[step.parent]?.id) : 0;
+      const rows = extractList(await runtime().halo.get('/ServiceCategory'));
+      return rows.find((r) => String(r.name ?? '').trim().toLowerCase() === String(step.name ?? '').trim().toLowerCase() && (!(parent > 0) || Number(r.parent_id ?? 0) === parent));
+    },
+    build: (step, refs, warn) => {
+      const p: Row = { name: step.name };
+      set(p, SPIKE_MAP.serviceCategory.parent, step.parent ? refs[step.parent]?.id : 0, 'service category parent', warn);
+      return p;
+    },
+    verifyCreate: (back, step, refs) => {
+      const k = SPIKE_MAP.serviceCategory.parent;
+      const want = step.parent ? refs?.[step.parent]?.id : 0;
+      return k && String(back[k] ?? 0) !== String(want) ? [`sits under ${back[k]}, wanted ${want}`] : [];
+    },
   },
 
   service: {
@@ -1740,12 +1782,22 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (step.ticket_type) set(p, m.ticketType, refs[step.ticket_type]?.id, 'service ticket type', warn);
       else warn('service: no ticket_type, so the portal would have nothing to log');
       set(p, m.portal, step.show_on_portal !== false, 'show on the portal', warn);
+      // Rule SV1: a service is requestable on the portal only with a Service Request Details row. Added after create
+      // (round 36 proved it on an existing service).
+      if (step.ticket_type && m.requestDetails) p._enact_after = { [m.requestDetails]: [requestRow(refs[step.ticket_type]?.id)] };
       return p;
     },
-    update: (step, refs, warn) => {
+    afterCreate: (id, sent) => (sent._enact_after ? { id, ...(sent._enact_after as Row) } : null),
+    update: (step, refs, warn, current) => {
       const m = SPIKE_MAP.service;
       const st = step.set ?? {};
       const out: Row = {};
+      // Rule SV1: make sure the service's ticket type can be requested (Config > Service Request Details).
+      const tt = st.ticket_type ? refs[st.ticket_type]?.id : m.ticketType ? current?.[m.ticketType] : undefined;
+      if (m.requestDetails && tt !== undefined && tt !== null && Number(tt) !== 0) {
+        const have = ((current?.[m.requestDetails] as Row[]) ?? []);
+        if (!have.some((r) => String(r.servicedetail_requesttypeid) === String(tt))) out[m.requestDetails] = [...have, requestRow(tt)];
+      }
       if (st.summary !== undefined && m.summary) out[m.summary] = st.summary;
       if (st.ticket_type && m.ticketType) out[m.ticketType] = refs[st.ticket_type]?.id;
       if (st.service_category && m.category) out[m.category] = refs[st.service_category]?.id;
@@ -2349,6 +2401,7 @@ export function refsOf(step: PlanStep): string[] {
     step.set?.sla,
     ...(step.set?.add_groups ?? []),
     ...(step.set?.add_fields ?? []).map((f) => f.ref),
+    ...(step.set?.field_hints ?? []).map((f) => f.ref),
     ...(step.set?.field_mandatory ?? []).map((f) => f.ref),
     ...(step.set?.replace_fields ?? []).flatMap((r) => [r.old, r.new]),
     step.dynamic?.copy_settings_from,
@@ -2376,6 +2429,7 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.children ?? []).flatMap((c) => [c.ticket_type, c.team]),
     step.ticket_type,
     step.service_category,
+    step.parent,
     step.set?.ticket_type,
     step.set?.service_category,
     step.site,
