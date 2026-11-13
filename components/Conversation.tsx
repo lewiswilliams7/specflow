@@ -177,7 +177,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
       try {
         // M17: a long first brief written as prose is split into parts first, so it's planned like a marked brief.
         let brief = text;
-        if (!threadId && !editOf && !splitForms(text) && text.length >= 1500) {
+        if (!threadId && !editOf && !splitForms(text) && text.length >= 800) {
           setPending((p) => (p ? { ...p, stage: 'planning', detail: 'finding the request types in your brief' } : p));
           const r = await fetch('/api/split', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: text, instance_id: instanceId }), signal: ctrl.signal }).catch(() => null);
           const marked = r?.ok ? ((await r.json().catch(() => ({}))) as { marked?: string | null }).marked : null;

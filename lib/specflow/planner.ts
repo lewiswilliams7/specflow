@@ -433,6 +433,15 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
       steps.push(s);
     }
   });
+  // M18 (13 Nov run-through): a part that reuses something by name another part creates (a form reusing the approval
+  // process or team the shared part makes) points at that create, instead of failing "no such ... in the inventory".
+  const createdByName = new Map(steps.filter((x) => x.action === 'create' && x.object !== 'field' && x.name).map((x) => [`${x.object}|${String(x.name).trim().toLowerCase()}`, x.id]));
+  for (let k = steps.length - 1; k >= 0; k--) {
+    const x = steps[k];
+    if (x.action !== 'reuse' || x.object === 'field') continue;
+    const target = createdByName.get(`${x.object}|${String(x.match?.name ?? '').trim().toLowerCase()}`);
+    if (target && target !== x.id) { alias.set(x.id, target); steps.splice(k, 1); }
+  }
   const withHint = <T extends { ref: string; hint?: string }>(f: T): T => (formHint.has(f.ref) && f.hint === undefined ? { ...f, hint: formHint.get(f.ref) } : f);
   const hinted = steps.map((s) => (s.object !== 'ticket_type' ? s : {
     ...s,
@@ -571,10 +580,34 @@ async function fixMerged(inventory: Inventory, request: string, plan: Plan, erro
   const fix = await generatePlan(inventory, `Fix these problems in the current plan and change nothing else:\n- ${errors.slice(keep).join('\n- ')}`, { requester: ctx.requester, previous: plan, history: [{ role: 'user', text: request }] }, { ...opts, effort: 'low' }).catch(() => null);
   if (!fix?.plan || fix.plan.fresh) return { plan, errors };
   applyWrittenOptions(fix.plan, request, inventory);
+  attachUnusedWorkflows(fix.plan);
   applyWrittenRequirement(fix.plan, request, inventory);
   fix.plan.request = request;
   const again = [...errors.slice(0, keep), ...validate(fix.plan)];
   return again.length < errors.length ? { plan: fix.plan, errors: again } : { plan, errors };
+}
+
+/**
+ * M19 (13 Nov run-through): the planner made a new workflow for a new ticket type but never attached it ("created but
+ * nothing uses it" + "has no workflow"). When a plan has both, attach each such ticket type to the unused new workflow
+ * whose name matches it best (the only one, if there's one). Never touches a type that already has a workflow.
+ */
+export function attachUnusedWorkflows(plan: Plan) {
+  const steps = plan.steps as PlanStep[];
+  const used = new Set(steps.flatMap((x) => refsOf(x)));
+  const free = steps.filter((x) => x.object === 'workflow' && x.action === 'create' && !used.has(x.id));
+  if (!free.length) return;
+  const words = (t: string) => new Set(String(t).toLowerCase().replace(/^zz\s+\S+\s+/, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !['workflow', 'request', 'the', 'and'].includes(w)));
+  const needs = steps.filter((x) => x.object === 'ticket_type' && x.action === 'create' && !steps.some((u) => u.object === 'ticket_type' && u.action === 'update' && String(u.match?.name ?? '').toLowerCase() === String(x.name ?? '').toLowerCase() && u.set?.workflow));
+  for (const tt of needs) {
+    const tw = words(String(tt.name));
+    const scored = free.map((w) => ({ w, n: [...words(String(w.name))].filter((x) => tw.has(x)).length })).sort((a, b) => b.n - a.n);
+    const pick = scored[0].n > 0 ? scored[0].w : free.length === 1 ? free[0] : null;
+    if (!pick) continue;
+    steps.push({ id: `wf_for_${tt.id}`, object: 'ticket_type', action: 'update', match: { name: String(tt.name) }, set: { workflow: pick.id } } as PlanStep);
+    plan.assumptions = [...(plan.assumptions ?? []), `"${tt.name}" uses the new workflow "${pick.name}" (it was made for it but not attached).`];
+  }
+  plan.steps = orderByDependency(steps);
 }
 
 /** M14: merge forms planned separately (in their own requests) and check the result like any plan. */
@@ -582,6 +615,7 @@ export async function mergeAndCheck(inventory: Inventory, request: string, parts
   const ok = parts.filter((r) => r.plan) as { title: string; plan: Plan }[];
   let plan = mergePlans(ok, request);
   applyWrittenOptions(plan, request, inventory);
+  attachUnusedWorkflows(plan);
   applyWrittenRequirement(plan, request, inventory);
   const { validate } = makePlanner(inventory, request, ctx);
   // Up to 4 questions per part: a merged plan carries every part's.
@@ -608,6 +642,7 @@ async function planInParts(inventory: Inventory, request: string, split: import(
   opts.onStage?.('checking');
   let plan = mergePlans(ok.map((r) => ({ title: r.title, plan: r.plan })), request);
   applyWrittenOptions(plan, request, inventory);
+  attachUnusedWorkflows(plan);
   applyWrittenRequirement(plan, request, inventory);
   const { validate } = makePlanner(inventory, request, ctx);
   const failed = results.filter((r) => !r.plan).map((r) => `"${r.title}": no plan could be made for this form (${r.errors[0] ?? 'the planner reply was not usable'}). Send it again on its own.`);
@@ -655,6 +690,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
       if (revising && plan) delete plan.fresh;
       if (plan && Array.isArray(plan.steps)) plan.steps = orderByDependency(plan.steps);
       if (plan && Array.isArray(plan.steps)) applyWrittenOptions(plan, request, inventory);
+      if (plan && Array.isArray(plan.steps)) attachUnusedWorkflows(plan);
       if (plan && Array.isArray(plan.steps)) applyWrittenRequirement(plan, request, inventory);
     } catch {
       errors = ['The planner reply was not valid JSON.'];

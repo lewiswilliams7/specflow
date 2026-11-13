@@ -72,6 +72,9 @@ function overlap(a: string, b: string): number {
 // run-through: "a role ... the right to approve purchase orders" blocked every form's approval in Northgate).
 const CONDITIONAL_APPROVAL = /\b(approval|approvals|approver|approvers|approved by|approves? (the|this|it|each|every|when|if|only)|needs? (approval|to be approved)|sign[- ]off)\b/i;
 // ...nor an email or notice about an approval (13 Nov run-through: "emailing the line manager when an approval is granted").
+// M6 only counts an approval whose ROUTING depends on a condition (13 Nov run-through: "line manager approval depends on
+// Halo syncing managers" is a caveat, not a condition; it took the approval off Northgate's Access Request).
+const CONDITIONAL_ROUTING = /conditional approv|approv\w*\s+(is\s+)?(only\s+)?(when|if|unless|for (amounts?|requests?|values?|orders?)\b)|only (be )?(approved|needs? approval|goes? for approval) (when|if)|approv\w* (above|over|under|below|for anything (over|above))|[£$€]\s?\d[\d,]*.{0,40}approv|approv.{0,60}[£$€]\s?\d/i;
 const NOT_AN_APPROVAL_STEP = /\b(role|permission|permissions|right to approve|privilege|email|emails|emailing|notify|notifies|notification|notifications|send|sends|sending|remind|reminder|message|messages)\b/i;
 const CONDITION = /\b(only|if|when|unless|condition|conditional|depend|depends|based on|value|threshold|over|under|above|below)\b|[£$€]\s?\d/i;
 const EVERY_TICKET_APPROVED = /\b(every|all)\s+(\S+\s+){0,4}tickets?\b[^.]*\bapprov/i;
@@ -122,7 +125,7 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   }
 
   // M6: an approval that should depend on a condition we can't build must not be attached to every ticket.
-  const conditional = (plan.unsupported ?? []).find((u) => CONDITIONAL_APPROVAL.test(u) && CONDITION.test(u) && !NOT_AN_APPROVAL_STEP.test(u));
+  const conditional = (plan.unsupported ?? []).find((u) => CONDITIONAL_APPROVAL.test(u) && CONDITION.test(u) && CONDITIONAL_ROUTING.test(u) && !NOT_AN_APPROVAL_STEP.test(u));
   const everyTicketMeant = (plan.assumptions ?? []).some((a) => EVERY_TICKET_APPROVED.test(a));
   if (conditional && !everyTicketMeant) {
     for (const s of steps) {

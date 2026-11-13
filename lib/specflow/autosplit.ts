@@ -17,7 +17,9 @@ Return only the JSON.`;
 
 export async function autoSplit(brief: string, opts: { signal?: AbortSignal; cacheKey?: string } = {}): Promise<string | null> {
   const lines = brief.split('\n');
-  if (brief.length < 1500 || lines.length < 6) return null;
+  // Even a short brief with two or more request types plans faster, and with a fix pass, in parts (13 Nov: the change
+  // brief, 1,400 characters, took 147s in one go and had no time left to fix).
+  if (brief.length < 800 || lines.length < 4) return null;
   const numbered = lines.map((l, i) => `${i + 1}: ${l}`).join('\n');
   const reply = await complete(SYSTEM, numbered, { effort: 'low', ...opts });
   let parsed: { shared?: number[][]; forms?: { title?: string; lines?: number[][] }[] };

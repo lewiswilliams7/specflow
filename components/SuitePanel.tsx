@@ -70,7 +70,7 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
         update(i, { status: 'planning' });
         const t0 = Date.now();
         // M17: a long prose brief is split first, as in a customer's conversation.
-        if (!splitForms(request) && request.length >= 1500) {
+        if (!splitForms(request) && request.length >= 800) {
           update(i, { status: 'splitting' });
           const sp = await post<{ marked?: string | null }>('/api/split', { message: request, instance_id: trial.id }, signal).catch(() => ({ marked: null }));
           if (sp.marked && splitForms(sp.marked)) { request = sp.marked; which = { brief_text: sp.marked }; update(i, { autoSplit: true }); }

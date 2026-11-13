@@ -118,16 +118,18 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
           signal: AbortSignal.timeout(45_000),
         });
       } catch (e) {
-        if (attempt >= 4) throw new Error(`Halo didn't answer GET ${url.pathname} after ${attempt} tries.`);
+        if (attempt >= 6) throw new Error(`Halo didn't answer GET ${url.pathname} after ${attempt} tries.`);
         await sleep(1000 * 2 ** attempt);
         continue;
       }
       const text = await res.text();
       if (res.ok) return (text ? JSON.parse(text) : null) as T;
       if (res.status === 401) throw new HaloAuthError('Halo stopped accepting the saved client ID or secret (401). Update the connection with the current ones.');
-      if (RETRY.has(res.status) && attempt < 4) {
+      // 13 Nov run-through: a busy trial still answered 429 after 4 tries (about 30s). Six tries with longer waits
+      // (up to about 2 minutes in all) ride out Halo's rate limit.
+      if (RETRY.has(res.status) && attempt < 6) {
         const after = Number(res.headers.get('retry-after'));
-        await sleep(Number.isFinite(after) && after > 0 ? Math.min(after, 20) * 1000 : 1000 * 2 ** attempt);
+        await sleep(Number.isFinite(after) && after > 0 ? Math.min(after, 45) * 1000 : Math.min(30_000, 1500 * 2 ** attempt));
         continue;
       }
       throw new Error(`Halo GET ${url.pathname} failed (${res.status}${RETRY.has(res.status) ? ` after ${attempt} tries: Halo is busy, try again in a minute` : ''})`);

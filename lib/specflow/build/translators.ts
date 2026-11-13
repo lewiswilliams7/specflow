@@ -862,13 +862,20 @@ function applyInserts(p: Row, inserts: InsertStep[], refs: Refs): Row {
   const steps = p.steps as Row[];
   const stages = p.stages as Row[];
   const byName = (n: string) => steps.find((s) => String(s.name).toLowerCase() === n.toLowerCase());
+  const inserted = new Set<string>();
   for (const ins of inserts) {
     const after = byName(ins.after_step);
     if (!after) throw new Error(`Workflow has no step named "${ins.after_step}"`);
     if (byName(ins.name)) throw new Error(`Workflow already has a step named "${ins.name}"`);
     // Rule W4 (2026-10-23): an action already on the step can't also lead into the new stage (one button, two destinations).
-    if (((after.actions as Row[]) ?? []).some((a) => Number(a.action_id) === Number(refs[ins.enter_via]?.id)))
+    // W4b (13 Nov run-through): when that step was itself added by this plan, its button was only a placeholder exit
+    // ("Send to Facilities" from the new IT Provisioning, then Facilities Setup entered via it): point the button
+    // into the new stage instead of failing. Existing steps' buttons are never rerouted this way.
+    const dup = ((after.actions as Row[]) ?? []).find((a) => Number(a.action_id) === Number(refs[ins.enter_via]?.id));
+    if (dup && !inserted.has(String(after.name).toLowerCase()))
       throw new Error(`"${refs[ins.enter_via]?.name}" is already an action on "${ins.after_step}"; use a new action to enter "${ins.name}"`);
+    if (dup) after.actions = ((after.actions as Row[]) ?? []).filter((a) => a !== dup);
+    inserted.add(ins.name.toLowerCase());
     const newStepId = Math.max(...steps.map((s) => Number(s.step_id))) + 1;
     const newStage = Number(after.stage_number) + 1;
 
