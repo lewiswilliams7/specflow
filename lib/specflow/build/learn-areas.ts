@@ -53,6 +53,9 @@
  * Round 39 (13 Nov): a rich text field (type 10) by the builder; a form's attachment settings (allowattachments,
  * minattachments); moving a service category to another parent (round 38's move hit the 3-tier limit, SC2).
  *
+ * Round 40 (13 Nov): user access on services and categories ("Everyone" vs restricted), and the portal's
+ * "Report an Issue" button and which ticket type it logs. Read first; one change on a zz category.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -63,7 +66,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 39;
+export const ROUND = 40;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -263,33 +266,39 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('rich text', async () => {
-    await prove('a rich text field on a zz form', { request: 'Enact learning run 39', steps: [
-      { id: 'r', object: 'field', action: 'create', name: 'CFzzEnactR39Rich', label: 'zz Enact r39 rich text', type: 'richtext', hint: 'zz rich text test' },
-      { id: 'form', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r36 form' }, set: { add_fields: [{ ref: 'r' }] } },
-    ] } as unknown as Plan);
-    const f = (await list('FieldInfo')).rows.find((x) => x.name === 'CFzzEnactR39Rich');
-    note('rich text', 'read back', f ? pick(await detail('FieldInfo', f.id), /^(id|name|label|type|inputtype|hint)$/) : 'not found');
-    if (f) summary.push('· rich text: open zz Enact r36 form in Halo and check "zz Enact r39 rich text" has the formatting toolbar');
+
+  await area('user access', async () => {
+    const A = 'user access';
+    const ACCESS = /access|restrict|group_user|everyone|allusers|all_users|visible|enduser/i;
+    for (const [ep, label] of [['ServiceCategory', 'category'], ['Service', 'service']] as const) {
+      const rows = (await list(ep)).rows;
+      const spread: Record<string, string[]> = {};
+      for (const r of rows.slice(0, 25)) {
+        const d = await detail(ep, r.id);
+        const k = `access_control_level ${d?.access_control_level ?? '?'} / restriction groups ${Array.isArray(d?.group_user_access) ? (d!.group_user_access as unknown[]).length : '?'}`;
+        (spread[k] ??= []).length < 5 && spread[k].push(`${r.id} ${nameOf(r)}`);
+      }
+      note(A, `${label}: access level and restriction groups, with examples`, spread);
+      const one = rows.find((r) => own(r));
+      if (one) note(A, `${label} ${one.id} ${nameOf(one)}: access settings`, pick(await detail(ep, one.id), ACCESS));
+    }
+    summary.push('· user access: in Halo open two of the records listed under each access_control_level and tell Claude which one says "Everyone" under User Access');
   });
 
-  await area('attachments', async () => {
-    const A = 'attachments';
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
-    if (!tt) { note(A, 'skipped', 'zz Enact r36 form missing'); return; }
-    note(A, 'before', pick(await detail('TicketType', tt.id), /attach/i));
-    await update(A, 'allow attachments', 'TicketType', Number(tt.id), { allowattachments: true });
-    await update(A, 'at least one attachment', 'TicketType', Number(tt.id), { minattachments: 1 });
-    summary.push('· attachments: on the Concord portal, log a zz Enact r36 form ticket without a file and check it asks for one');
-  });
-
-  await area('category move', async () => {
-    const A = 'category move';
-    const sub = (await list('ServiceCategory')).rows.find((c) => nameOf(c) === 'zz Enact r36 subcategory');
-    if (!sub) { note(A, 'skipped', 'zz Enact r36 subcategory missing'); return; }
-    const was = Number(sub.parent_id ?? 0);
-    await update(A, 'move to the top level', 'ServiceCategory', Number(sub.id), { parent_id: 0 });
-    await update(A, 'move back', 'ServiceCategory', Number(sub.id), { parent_id: was });
+  await area('report an issue', async () => {
+    const A = 'report an issue';
+    await discover(A, 'portal menu', ['PortalMenu', 'MenuItem', 'PortalConfig', 'Portal', 'WebPortal', 'Shortcut', 'ShortcutButton', 'PortalTile', 'Tile', 'SelfServicePortal']);
+    // Settings that name a default ticket type for end users or the portal.
+    const seen: Record<string, unknown> = {};
+    for (const t of (await list('TicketType')).rows.filter(own).slice(0, 30)) {
+      const d = await detail('TicketType', t.id);
+      for (const [k, v] of Object.entries(d ?? {})) if (/default|enduser|portal|newticket|report/i.test(k) && (v === true || (typeof v === 'number' && v > 0)) && !(k in seen)) seen[k] = { form: `${t.id} ${nameOf(t)}`, value: short(v) };
+    }
+    note(A, 'ticket type settings in use that mention default, end user or portal', seen);
+    for (const ep of ['Config', 'Settings', 'Controller']) {
+      const r = await list(ep);
+      note(A, `${ep}`, r.error ? `error: ${r.error.slice(0, 120)}` : `${r.rows.length} rows; keys ${Object.keys(r.rows[0] ?? {}).filter((k) => /portal|default|enduser|report|newticket|tickettype/i.test(k)).join(', ')}`);
+    }
   });
 
   return { out, summary };
