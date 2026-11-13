@@ -90,6 +90,19 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
   const nameOf = (r: Record<string, unknown> | null | undefined, key = 'name') => String(r?.[key] ?? r?.name ?? '');
   async function findByName(resource: string, name: string, key = 'name'): Promise<Record<string, unknown> | undefined> {
     const rows = extractList(await halo.get(`/${resource}`));
+    // A path ("HR > Recruitment > Onboarding") names one record in a tree (service categories, SC1): walk it from the top,
+    // so a same-named record in another branch is never picked (13 Nov: Compleat's existing Onboarding was reused for
+    // HR > Recruitment > Onboarding).
+    if (name.includes(' > ') && rows.some((r) => 'parent_id' in r)) {
+      let parent = 0;
+      let hit: Record<string, unknown> | undefined;
+      for (const part of name.split(' > ').map((x) => x.trim().toLowerCase())) {
+        hit = rows.find((r) => String(r[key] ?? r.name ?? '').trim().toLowerCase() === part && Number(r.parent_id ?? 0) === parent);
+        if (!hit) return undefined;
+        parent = Number(hit.id);
+      }
+      return hit;
+    }
     const want = name.trim().toLowerCase();
     // List rows don't always carry the same name property as the full record
     // (Outcome lists have `buttonname`, full records also have `outcome`), so check all of them.
