@@ -393,7 +393,9 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
   const keyOf = (s: PlanStep) => {
     if (s.action === 'reuse') return `reuse|${s.object}|${String(s.match?.name ?? '').toLowerCase()}`;
     if (s.action !== 'create') return null;
-    if (s.object === 'field') return `field|${String(s.label ?? s.name).trim().toLowerCase()}|${s.type}|${[...(s.options ?? [])].map((o) => o.toLowerCase()).sort().join(';')}|${s.dynamic?.list ?? ''}`;
+    // Help text is part of a field (Halo keeps one hint per field), so the same field with a different hint on another
+    // form is a separate field (13 Nov: Payroll and Probation showed Benefits & Reward's Site / Location hint).
+    if (s.object === 'field') return `field|${String(s.label ?? s.name).trim().toLowerCase()}|${s.type}|${[...(s.options ?? [])].map((o) => o.toLowerCase()).sort().join(';')}|${s.dynamic?.list ?? ''}|${String(s.hint ?? '').trim().toLowerCase()}`;
     return `${s.object}|${String(s.name ?? '').trim().toLowerCase()}`;
   };
   parts.forEach(({ title, plan }, i) => {

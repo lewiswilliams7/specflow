@@ -34,6 +34,11 @@
  * screens put back to 1 (round 31 moved them to a separate tab); whether end users can log a ticket type on the portal
  * (enduserscanselect); which SLA setting picks the working hours.
  *
+ * Round 35 (13 Nov): (1) how a service lists the request types people can log from it on the portal
+ * (service_request_details: Halo's own rows in full, then one added to the zz r30 service and read back); (2) whether a
+ * form row can carry its own help text, separate from the field's (Lewis: the same field needs a different hint per
+ * ticket type). Round 34's tests (read-only 4, portal visibility, SLA working hours) run again first.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -44,7 +49,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 34;
+export const ROUND = 35;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -285,6 +290,61 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     const keys = Object.keys(zd ?? {}).filter((k) => /workday/i.test(k) && (typeof zd?.[k] === 'number' || zd?.[k] === null));
     note(A, 'candidate keys on the zz SLA', pick(zd, new RegExp(`^(${keys.join('|') || 'x^'})$`)));
     if (z && hours) for (const k of keys) await update(A, `SLA ${k} → zz r30 hours`, 'SLA', Number(z.id), { [k]: Number(hours.id) });
+  });
+
+
+  // ---------- Service request details: what makes a service requestable on the portal ----------
+  await area('service request details', async () => {
+    const A = 'service request details';
+    const svcs = (await list('Service')).rows.filter(own);
+    let shown = 0;
+    for (const s of svcs) {
+      const d = await detail('Service', s.id);
+      const rows = (d?.service_request_details as Row[]) ?? [];
+      if (!rows.length) continue;
+      note(A, `Halo own: service ${s.id} ${nameOf(s)}`, { service_tickettype_id: d?.service_tickettype_id, requestdetails_count: d?.requestdetails_count, rows });
+      if (++shown >= 2) break;
+    }
+    const zz = (await list('Service')).rows.find((r) => nameOf(r) === 'zz Enact r30 service');
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
+    if (!zz || !tt) { note(A, 'skipped', 'zz r30 service or zz r31 form missing'); return; }
+    const before = await detail('Service', zz.id);
+    note(A, 'zz service before', pick(before, /^(service_tickettype_id|requestdetails_count|service_request_details|showinusercatalog)$/));
+    if (!apply) return;
+    await update(A, 'add a request type', 'Service', Number(zz.id), { service_request_details: [{ servicedetail_type: 0, servicedetail_requesttypeid: Number(tt.id), icon: 'plus-circle' }] });
+    const after = await detail('Service', zz.id);
+    note(A, 'zz service after', pick(after, /^(service_tickettype_id|requestdetails_count|service_request_details)$/));
+    const ok = ((after?.service_request_details as Row[]) ?? []).some((r) => Number(r.servicedetail_requesttypeid) === Number(tt.id));
+    summary.push(`· service request details: ${ok ? `zz r31 form now requestable from "zz Enact r30 service" (check it on the portal)` : 'not kept'}`);
+  });
+
+  // ---------- A help text per form row (same field, different hint per ticket type) ----------
+  await area('row hint', async () => {
+    const A = 'row hint';
+    const own1 = (await list('TicketType')).rows.find(own);
+    const d = own1 ? await detail('TicketType', own1.id) : null;
+    const row = ((d?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) > 0);
+    note(A, 'a Halo form row, every key', row ? Object.keys(row) : null);
+    const cand = Object.keys(row ?? {}).filter((k) => /hint|tooltip|help|desc|note|text|label|caption|override/i.test(k));
+    note(A, 'candidate keys and values', pick(row, new RegExp(`^(${cand.join('|') || 'x^'})$`)));
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
+    if (!apply || !tt) return;
+    const cur = await detail('TicketType', tt.id);
+    const choice = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR31Choice')?.id);
+    const kept: Row = {};
+    for (const k of cand.filter((k) => typeof row?.[k] === 'string' || row?.[k] === null)) {
+      const rows = ((cur?.fields as Row[]) ?? []).map((r) => Object.fromEntries(Object.entries(r).filter(([x]) => x !== 'group' && x !== 'fieldinfo')));
+      const target = rows.find((r) => Number(r.fieldid) === choice);
+      if (!target) break;
+      target[k] = `zz r35 row ${k}`;
+      try {
+        await runtime().halo.post('/TicketType', [{ id: tt.id, fields: rows }]);
+        const back = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === choice);
+        kept[k] = back?.[k];
+      } catch (e) { kept[k] = `error: ${err(e).slice(0, 120)}`; }
+    }
+    note(A, 'row keys tried on zz r31 form (field zz r31 choice)', kept);
+    summary.push(`· per-form hint: tried ${Object.keys(kept).join(', ') || 'nothing (no text-like row keys)'}; open a new "zz Enact r31 form" ticket and say which text shows next to "zz Enact r31 choice"`);
   });
 
   return { out, summary };
