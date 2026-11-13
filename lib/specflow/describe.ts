@@ -84,7 +84,7 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
         out.push(`Copy of "${step.copy_of}"${step.insert_steps?.length ? `, adding ${step.insert_steps.map((i) => stageText(i, ref)).join('; ')}` : ''}`);
         break;
       case 'ticket_type':
-        out.push(`New ticket type${step.based_on ? ` copied from "${step.based_on}"` : ''}${step.fields?.length ? `, fields ${list(step.fields.map((f) => `${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`))}` : ''}${step.groups?.length ? `, sections ${list(step.groups.map(ref))}` : ''}${step.team ? `, team ${ref(step.team)}` : ''}${step.sla ? `, SLA ${ref(step.sla)}` : ''}${step.approval ? `, approval ${ref(step.approval)}` : ''}`);
+        out.push(`New ticket type${step.based_on ? ` copied from "${step.based_on}"` : ''}${step.fields?.length ? `, fields ${list(step.fields.map((f) => `${ref(f.ref)}${f.mandatory ? ' (required)' : ''}${f.hint !== undefined ? ` (help text here: "${f.hint}")` : ''}`))}` : ''}${step.groups?.length ? `, sections ${list(step.groups.map(ref))}` : ''}${step.team ? `, team ${ref(step.team)}` : ''}${step.sla ? `, SLA ${ref(step.sla)}` : ''}${step.approval ? `, approval ${ref(step.approval)}` : ''}`);
         break;
       case 'status':
         out.push(`New status${step.sla_action === 'hold' ? ' that pauses the SLA' : ''}`);
@@ -162,7 +162,8 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
   if (st.service_category) out.push(`move to ${ref(st.service_category)}`);
   if (st.show_on_portal !== undefined) out.push(st.show_on_portal ? 'show on the portal' : 'hide from the portal');
   for (const f of st.field_mandatory ?? []) out.push(`make ${ref(f.ref)} ${f.mandatory ? 'required' : 'optional'}`);
-  for (const f of st.add_fields ?? []) out.push(`add ${ref(f.ref)}${f.mandatory ? ' (required)' : ''}`);
+  for (const f of st.add_fields ?? []) out.push(`add ${ref(f.ref)}${f.mandatory ? ' (required)' : ''}${f.hint !== undefined ? ` with this form's help text "${f.hint}"` : ''}`);
+  for (const h of st.field_hints ?? []) out.push(`${ref(h.ref)} help text on this form: "${h.hint}"`);
   for (const g of st.add_groups ?? []) out.push(`add the section ${ref(g)}`);
   if (st.team) out.push(`set the team to ${ref(st.team)}`);
   if (st.sla) out.push(`set the SLA to ${ref(st.sla)}`);
