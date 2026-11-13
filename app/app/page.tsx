@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { IconChat, IconCheck, IconServer } from '@/components/icons';
 import { LearnPanel } from '@/components/LearnPanel';
+import { SuitePanel } from '@/components/SuitePanel';
 import { isAdmin, isTrial } from '@/lib/admin';
 import { ROUND } from '@/lib/specflow/build/learn-areas';
 import { getContext } from '@/lib/workspace';
@@ -119,6 +120,7 @@ export default async function Overview() {
         )}
       </section>
       {isAdmin(user.email) ? <LearnPanel round={ROUND} trial={trial ? { id: trial.id, name: trial.name } : null} /> : null}
+      {isAdmin(user.email) ? <SuitePanel trial={trial ? { id: trial.id, name: trial.name } : null} /> : null}
     </div>
   );
 }

@@ -610,3 +610,6 @@ textarea { resize: vertical; min-height: 96px; }
 .change-group > summary .sign { font: 600 14px/1.45 var(--mono); text-align: center; border-radius: 5px; height: 22px; color: var(--change); background: var(--change-soft); }
 .change-group[open] > summary .chev { transform: rotate(180deg); }
 .change-group.add > summary { border-left-color: var(--add); } .change-group.add > summary .sign { color: var(--add); background: var(--add-soft); }
+
+.suite-pick { list-style: none; padding: 0; margin: 4px 0 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; font-size: 13.5px; }
+.suite-add { margin: 0 0 10px; font-size: 13.5px; } .suite-add > summary { cursor: pointer; color: var(--ink-2); } .suite-add .input { display: block; width: 100%; margin: 8px 0; } .suite-pick li { display: flex; align-items: center; gap: 8px; } .btn.tiny { height: 22px; padding: 0 8px; font-size: 12px; }
