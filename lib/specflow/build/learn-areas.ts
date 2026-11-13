@@ -39,6 +39,10 @@
  * form row can carry its own help text, separate from the field's (Lewis: the same field needs a different hint per
  * ticket type). Round 34's tests (read-only 4, portal visibility, SLA working hours) run again first.
  *
+ * Round 36 (13 Nov): round 35 found zz Enact r31 form retired (the enterprise test retired it), so its tests skipped.
+ * A fresh zz form, then: a request type added to a service's Service Request Details, read-only (4) by the builder,
+ * and a service subcategory created under an existing category.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -49,7 +53,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 35;
+export const ROUND = 36;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -245,106 +249,46 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('read-only', async () => {
-    const A = 'read-only';
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
-    if (!tt || !apply) return;
-    const fields = (await list('FieldInfo')).rows;
-    const ids = ['CFzzEnactR31Locked', 'CFzzEnactR33Locked'].map((n) => Number(fields.find((f) => f.name === n)?.id));
-    // Put round 31/33's rows back: detail screens 1 (ticket information), new screens 1 (visible, not required).
-    const cur = await detail('TicketType', tt.id);
-    const rows = ((cur?.fields as Row[]) ?? []).map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== 'group' && k !== 'fieldinfo')));
-    for (const r of rows) if (ids.includes(Number(r.fieldid))) Object.assign(r, { endusernew: 1, technew: 1, enduserdetail: 1, techdetail: 1 });
-    await runtime().halo.post('/TicketType', [{ id: tt.id, fields: rows }]);
-    // Now the builder locks field 316 the right way.
-    await prove('read-only (value 4)', { request: 'Enact learning run 34', steps: [
+
+  await area('fresh form', async () => {
+    await prove('a fresh zz form with a locked field', { request: 'Enact learning run 36', steps: [
+      { id: 'c', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR31Choice' } },
       { id: 'f', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR33Locked' } },
-      { id: 'form', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r31 form' }, set: { read_only: ['f'] } },
+      { id: 'form', object: 'ticket_type', action: 'create', name: 'zz Enact r36 form', fields: [{ ref: 'c' }, { ref: 'f' }] },
+      { id: 'lock', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r36 form' }, set: { read_only: ['f'] } },
     ] } as unknown as Plan);
-    const after = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).filter((r) => ids.includes(Number(r.fieldid))).map((r) => ({ field: r.fieldid, ...pick(r, /^(endusernew|technew|enduserdetail|techdetail)$/) }));
-    note(A, 'rows after', after);
-    summary.push('· read-only: open a NEW "zz Enact r31 form" ticket: "zz Enact r33 locked" should be read only; "zz Enact r31 locked" normal again, both in Ticket information');
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
+    const fid = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR33Locked')?.id);
+    const row = tt ? (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === fid) : null;
+    note('fresh form', 'locked row', row ? pick(row, /^(endusernew|technew|enduserdetail|techdetail)$/) : null);
   });
 
-  await area('portal', async () => {
-    const A = 'portal';
-    const types = (await list('TicketType')).rows.filter(own).slice(0, 30);
-    const seen: Record<string, number> = {};
-    for (const t of types) { const d = await detail('TicketType', t.id); seen[String(d?.enduserscanselect)] = (seen[String(d?.enduserscanselect)] ?? 0) + 1; }
-    note(A, 'enduserscanselect across Halo\'s own types', seen);
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
-    if (tt) await update(A, 'portal off then on', 'TicketType', Number(tt.id), { enduserscanselect: false });
-    if (tt) await update(A, 'portal back on', 'TicketType', Number(tt.id), { enduserscanselect: true });
-  });
-
-  await area('sla working hours', async () => {
-    const A = 'sla working hours';
-    const sla = (await list('SLA')).rows.find(own);
-    const d = sla ? await detail('SLA', sla.id) : null;
-    note(A, 'SLA settings that look like working hours', pick(d, /work|day|hour|calendar|holiday/i));
-    if (!apply) return;
-    await prove('SLA for the test', { request: 'Enact learning run 34: SLA', steps: [{ id: 's', object: 'sla', action: 'create', name: 'zz Enact r34 SLA', resolve_days: 2 }] } as unknown as Plan);
-    const z = (await list('SLA')).rows.find((r) => nameOf(r) === 'zz Enact r34 SLA');
-    const hours = (await list('Workday')).rows.find((r) => nameOf(r) === 'zz Enact r30 hours');
-    const zd = z ? await detail('SLA', z.id) : null;
-    const keys = Object.keys(zd ?? {}).filter((k) => /workday/i.test(k) && (typeof zd?.[k] === 'number' || zd?.[k] === null));
-    note(A, 'candidate keys on the zz SLA', pick(zd, new RegExp(`^(${keys.join('|') || 'x^'})$`)));
-    if (z && hours) for (const k of keys) await update(A, `SLA ${k} → zz r30 hours`, 'SLA', Number(z.id), { [k]: Number(hours.id) });
-  });
-
-
-  // ---------- Service request details: what makes a service requestable on the portal ----------
   await area('service request details', async () => {
     const A = 'service request details';
-    const svcs = (await list('Service')).rows.filter(own);
-    let shown = 0;
-    for (const s of svcs) {
-      const d = await detail('Service', s.id);
-      const rows = (d?.service_request_details as Row[]) ?? [];
-      if (!rows.length) continue;
-      note(A, `Halo own: service ${s.id} ${nameOf(s)}`, { service_tickettype_id: d?.service_tickettype_id, requestdetails_count: d?.requestdetails_count, rows });
-      if (++shown >= 2) break;
-    }
     const zz = (await list('Service')).rows.find((r) => nameOf(r) === 'zz Enact r30 service');
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
-    if (!zz || !tt) { note(A, 'skipped', 'zz r30 service or zz r31 form missing'); return; }
-    const before = await detail('Service', zz.id);
-    note(A, 'zz service before', pick(before, /^(service_tickettype_id|requestdetails_count|service_request_details|showinusercatalog)$/));
-    if (!apply) return;
-    await update(A, 'add a request type', 'Service', Number(zz.id), { service_request_details: [{ servicedetail_type: 0, servicedetail_requesttypeid: Number(tt.id), icon: 'plus-circle' }] });
-    const after = await detail('Service', zz.id);
-    note(A, 'zz service after', pick(after, /^(service_tickettype_id|requestdetails_count|service_request_details)$/));
-    const ok = ((after?.service_request_details as Row[]) ?? []).some((r) => Number(r.servicedetail_requesttypeid) === Number(tt.id));
-    summary.push(`· service request details: ${ok ? `zz r31 form now requestable from "zz Enact r30 service" (check it on the portal)` : 'not kept'}`);
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
+    if (!zz || !tt) { note(A, 'skipped', { service: !!zz, form: !!tt }); return; }
+    note(A, 'before', pick(await detail('Service', zz.id), /^(requestdetails_count|service_request_details)$/));
+    await update(A, 'add zz r36 form', 'Service', Number(zz.id), { service_request_details: [{ servicedetail_type: 0, servicedetail_requesttypeid: Number(tt.id), servicedetail_label: 'Request this Service', servicedetail_shownewreqscreen: true, icon: 'plus-circle', sequenceid: 10, allow_all_items: true }] });
+    const after = (await detail('Service', zz.id))?.service_request_details as Row[] | undefined;
+    note(A, 'after', (after ?? []).map((r) => pick(r, /^(id|servicedetail_type|servicedetail_requesttypeid|servicedetail_requesttypename|servicedetail_label|servicedetail_shownewreqscreen|sequenceid)$/)));
+    const ok = (after ?? []).some((r) => Number(r.servicedetail_requesttypeid) === Number(tt.id));
+    summary.push(`· service request details: ${ok ? 'kept. On the Concord portal, open "zz Enact r30 service" and check "Request this Service" opens zz Enact r36 form' : 'not kept'}`);
   });
 
-  // ---------- A help text per form row (same field, different hint per ticket type) ----------
-  await area('row hint', async () => {
-    const A = 'row hint';
-    const own1 = (await list('TicketType')).rows.find(own);
-    const d = own1 ? await detail('TicketType', own1.id) : null;
-    const row = ((d?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) > 0);
-    note(A, 'a Halo form row, every key', row ? Object.keys(row) : null);
-    const cand = Object.keys(row ?? {}).filter((k) => /hint|tooltip|help|desc|note|text|label|caption|override/i.test(k));
-    note(A, 'candidate keys and values', pick(row, new RegExp(`^(${cand.join('|') || 'x^'})$`)));
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r31 form');
-    if (!apply || !tt) return;
-    const cur = await detail('TicketType', tt.id);
-    const choice = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR31Choice')?.id);
-    const kept: Row = {};
-    for (const k of cand.filter((k) => typeof row?.[k] === 'string' || row?.[k] === null)) {
-      const rows = ((cur?.fields as Row[]) ?? []).map((r) => Object.fromEntries(Object.entries(r).filter(([x]) => x !== 'group' && x !== 'fieldinfo')));
-      const target = rows.find((r) => Number(r.fieldid) === choice);
-      if (!target) break;
-      target[k] = `zz r35 row ${k}`;
-      try {
-        await runtime().halo.post('/TicketType', [{ id: tt.id, fields: rows }]);
-        const back = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === choice);
-        kept[k] = back?.[k];
-      } catch (e) { kept[k] = `error: ${err(e).slice(0, 120)}`; }
-    }
-    note(A, 'row keys tried on zz r31 form (field zz r31 choice)', kept);
-    summary.push(`· per-form hint: tried ${Object.keys(kept).join(', ') || 'nothing (no text-like row keys)'}; open a new "zz Enact r31 form" ticket and say which text shows next to "zz Enact r31 choice"`);
+  await area('service subcategory', async () => {
+    const A = 'service subcategory';
+    const cats = (await list('ServiceCategory')).rows;
+    const parent = cats.find(own);
+    const d = parent ? await detail('ServiceCategory', parent.id) : null;
+    note(A, 'a category, every setting', settings(d));
+    note(A, 'parent-like keys across categories', cats.slice(0, 15).map((c) => pick(c, /^(id|name|parent|parent_id|parentid|level|sequence|toplevel|group)/i)));
+    if (!parent) return;
+    const pk = Object.keys(d ?? {}).find((k) => /^parent(_?id)?$/i.test(k)) ?? Object.keys(cats[0] ?? {}).find((k) => /^parent(_?id)?$/i.test(k));
+    note(A, 'parent key', pk ?? 'none found');
+    if (!pk) return;
+    const id = await create(A, 'subcategory', 'ServiceCategory', { name: 'zz Enact r36 subcategory', [pk]: Number(parent.id) });
+    if (id) note(A, 'subcategory read back', pick(await detail('ServiceCategory', id), new RegExp(`^(id|name|${pk}|level)$`)));
   });
 
   return { out, summary };

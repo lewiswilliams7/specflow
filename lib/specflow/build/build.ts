@@ -263,7 +263,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         if (back) refs[step.id] = { ...refs[step.id], row: back };
         const nameOk = nameOf(back, t.nameKey) === expectedName;
         if (!nameOk) warn(`Read-back mismatch: expected name "${expectedName}", got "${nameOf(back, t.nameKey)}"`);
-        const extra = back && t.verifyCreate ? t.verifyCreate(back, step) : [];
+        const extra = back && t.verifyCreate ? t.verifyCreate(back, step, refs) : [];
         for (const x of extra) warn(x);
         const ok = nameOk && !extra.length;
 

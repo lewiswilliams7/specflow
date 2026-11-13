@@ -38,6 +38,8 @@ export const SPIKE_MAP = {
     priorities: 'priorities' as string | null,
     fixTime: 'fixtime' as string | null,
     fixUnits: 'fixunits' as string | null,
+    /** The working hours the SLA clock follows (round 35: workday_id sent 4, kept 4). */
+    workday: 'workday_id' as string | null,
   },
 
   approval: {
@@ -1008,6 +1010,8 @@ export interface PlanStep {
     show_field_when?: FieldCondition[];
     /** ticket_type: ref of an email_template step, emailed to the requester when a ticket is logged (EM4). */
     acknowledgement_email?: string;
+    /** sla: the working hours its clock follows. */
+    working_hours?: string;
     /** ticket_type: these fields show but can't be typed in (round 31). */
     read_only?: string[];
     /** ticket_type: retire it (T8: visible false). Never deleted. */
@@ -1125,7 +1129,7 @@ export interface Translator {
   /** For action 'update': check the read-back. Returns problems; without it, scalar keys are compared. */
   verifyUpdate?: (back: Record<string, unknown>, changes: Record<string, unknown>, step: PlanStep, refs: Refs) => string[];
   /** For action 'create': problems in the read-back beyond the name (e.g. a field that isn't a ticket field, rule F10). */
-  verifyCreate?: (back: Record<string, unknown>, step: PlanStep) => string[];
+  verifyCreate?: (back: Record<string, unknown>, step: PlanStep, refs?: Refs) => string[];
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
   /** Find a record this create would duplicate, when "same name" isn't the right test (users by email, sites by
    *  organisation, holidays by date). Replaces the name lookup for creates. */
@@ -1388,8 +1392,17 @@ export const translators: Record<PlanStep['object'], Translator> = {
           }
         }
       }
+      // Round 35 (Concord, zz SLA 5): workday_id is the working hours the SLA clock follows; sent 4, kept 4.
+      if (step.working_hours) set(p, SPIKE_MAP.sla.workday, _refs[step.working_hours]?.id, 'SLA working hours', warn);
       return p;
     },
+    update: (step, refs, warn) => {
+      const out: Row = {};
+      if (step.set?.working_hours && SPIKE_MAP.sla.workday) out[SPIKE_MAP.sla.workday] = refs[step.set.working_hours]?.id;
+      if (!Object.keys(out).length) warn('update: nothing to set (an SLA update can change its working hours)');
+      return out;
+    },
+    verifyCreate: (back, step, refs) => (step.working_hours && SPIKE_MAP.sla.workday && refs && Number(back[SPIKE_MAP.sla.workday]) !== Number(refs[step.working_hours]?.id) ? [`SLA follows working hours ${back[SPIKE_MAP.sla.workday]}, wanted ${refs[step.working_hours]?.name}`] : []),
   },
 
   approval_process: {
@@ -2369,6 +2382,7 @@ export function refsOf(step: PlanStep): string[] {
     step.organisation,
     step.working_hours,
     step.faq_list,
+    step.set?.working_hours,
     step.based_on_role,
     step.asset_group,
     ...(step.set?.read_only ?? []),
