@@ -98,7 +98,13 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       let hit: Record<string, unknown> | undefined;
       for (const part of name.split(' > ').map((x) => x.trim().toLowerCase())) {
         hit = rows.find((r) => String(r[key] ?? r.name ?? '').trim().toLowerCase() === part && Number(r.parent_id ?? 0) === parent);
-        if (!hit) return undefined;
+        if (!hit) {
+          // The path was read before this build moved things (e.g. "HR > Recruitment" after Recruitment went to the top
+          // level). Fall back to the last part's name, but only when exactly one record has it.
+          const leaf = name.split(' > ').at(-1)!.trim().toLowerCase();
+          const same = rows.filter((r) => String(r[key] ?? r.name ?? '').trim().toLowerCase() === leaf);
+          return same.length === 1 ? same[0] : undefined;
+        }
         parent = Number(hit.id);
       }
       return hit;
