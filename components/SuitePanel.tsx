@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { splitForms } from '@/lib/specflow/forms';
 import { SUITE, tagBrief } from '@/lib/suite';
+import { score } from '@/lib/suite-checks';
 
 type Part = { title?: string; plan?: unknown; errors?: string[]; seal?: string; error?: string };
 type Row = {
@@ -18,6 +19,8 @@ type Row = {
   steps?: Record<string, number>;
   planSeconds?: number;
   autoSplit?: boolean;
+  /** Expected results met (lib/suite-checks.ts): did the plan contain what the brief asked for. */
+  fidelity?: { passed: number; total: number; missed: string[] } | null;
   preview?: { ok: boolean; problems: string[]; outcomes: Record<string, number>; seconds: number };
   build?: { ok: boolean; problems: string[]; outcomes: Record<string, number>; errors: string[]; warnings: string[]; seconds: number };
   error?: string;
@@ -119,6 +122,7 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
         }
         if (res.plan) writeSaved(s.id, { request, plan: res.plan, passed: false });
         }
+        update(i, { fidelity: score(s.id, res.plan as never) });
         const plan = res.plan as { steps?: { object: string; action: string }[]; questions?: unknown[]; unsupported?: string[]; assumptions?: unknown[] } | null;
         const steps: Record<string, number> = {};
         for (const st of plan?.steps ?? []) steps[st.action] = (steps[st.action] ?? 0) + 1;
@@ -216,12 +220,13 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
             <>
               <p className="subtle" style={{ marginTop: 10 }}>{busy ? 'Keep this page open. A big brief takes several minutes.' : `${passed} of ${rows.length} passed.`}</p>
               <table className="form-table" style={{ marginTop: 6 }}>
-                <thead><tr><th>Brief</th><th>Status</th><th>First try clean</th><th>Questions</th><th>Can’t do</th><th>Steps</th></tr></thead>
+                <thead><tr><th>Brief</th><th>Status</th><th>Asked-for things planned</th><th>First try clean</th><th>Questions</th><th>Can’t do</th><th>Steps</th></tr></thead>
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.id}>
                       <td><b>{r.title}</b>{r.error ? <div className="subtle">{r.error}</div> : null}{r.planErrors?.length ? <div className="subtle">{r.planErrors.slice(0, 3).join(' · ')}</div> : null}{r.preview?.problems.length ? <div className="subtle">{r.preview.problems.slice(0, 3).join(' · ')}</div> : null}</td>
                       <td>{r.status}</td>
+                      <td title={r.fidelity?.missed.join('\n')}>{r.fidelity ? `${r.fidelity.passed}/${r.fidelity.total}` : ''}</td>
                       <td>{r.firstPassClean === undefined ? '' : r.firstPassClean ? 'Yes' : 'No'}</td>
                       <td>{r.questions ?? ''}</td>
                       <td>{r.unsupported?.length ?? ''}</td>
