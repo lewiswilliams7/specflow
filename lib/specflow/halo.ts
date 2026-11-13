@@ -72,17 +72,25 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
         signal: AbortSignal.timeout(15_000),
       });
     // Ask for everything the API application allows; an application set to read-only may refuse "all", so fall back.
-    let res: Response;
-    try {
-      res = await ask('all');
-      granted = 'all';
-      if (res.status === 400) {
-        res = await ask('read:all');
-        granted = 'read:all';
+    // Signing in is retried on a network failure or timeout (13 Nov: Compleat refused one sign-in mid-afternoon and the
+    // whole preview stopped). A rejected secret (400/401) is never retried.
+    let res: Response | null = null;
+    let cause = '';
+    for (let attempt = 1; attempt <= 3 && !res; attempt++) {
+      try {
+        res = await ask('all');
+        granted = 'all';
+        if (res.status === 400) {
+          res = await ask('read:all');
+          granted = 'read:all';
+        }
+      } catch (e) {
+        const err = e as Error & { cause?: { code?: string; message?: string } };
+        cause = err.name === 'TimeoutError' ? 'it didn\'t answer within 15 seconds' : /redirect/i.test(`${err.message} ${err.cause?.message ?? ''}`) ? 'it sent Enact somewhere else instead of signing in (often maintenance or a changed address)' : err.cause?.code === 'ENOTFOUND' ? 'the address doesn\'t exist' : `the connection failed${err.cause?.code ? ` (${err.cause.code})` : ''}`;
+        if (attempt < 3) await sleep(2000 * attempt);
       }
-    } catch {
-      throw new Error(`Couldn't reach ${new URL(conn.baseUrl).host} to sign in. Check the address, or try again in a minute.`);
     }
+    if (!res) throw new Error(`Couldn't reach ${new URL(conn.baseUrl).host} to sign in: ${cause}. Tried 3 times. Open the address in your browser to check Halo is up, then try again.`);
     const text = await res.text();
     if (!res.ok) {
       if (res.status === 400 || res.status === 401) throw new HaloAuthError();
