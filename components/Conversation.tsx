@@ -106,6 +106,15 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
   const abort = useRef<AbortController | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  const dock = useRef<HTMLDivElement>(null);
+  // The composer's height, so a plan's build bar and progress can stick just above it (13 Nov: they scrolled away).
+  useEffect(() => {
+    const el = dock.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => document.documentElement.style.setProperty('--dock-h', `${Math.ceil(el.getBoundingClientRect().height)}px`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
 
   // Clear the pending turn once the saved one arrives from the server.
   useEffect(() => {
@@ -286,7 +295,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
   const empty = !shown.length && !pending;
 
   const composer = (
-    <div className="composer-dock">
+    <div className="composer-dock" ref={dock}>
       {choices?.length && !pending ? <Choices key={turns.at(-1)?.id} choices={choices} hold={Boolean(questions?.length)} /> : null}
       {questions?.length && !pending ? <Questions key={`q-${turns.at(-1)?.id}`} questions={questions} /> : null}
       <form

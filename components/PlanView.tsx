@@ -18,6 +18,63 @@ const COVER: Record<string, { cls: string; sign: string; label: string }> = {
   missing: { cls: 'add', sign: '+', label: 'Missing' },
 };
 
+
+type FormRow = { ref: string; label: string; kind: string; isNew: boolean; required?: boolean; when: string[]; hint?: string };
+/**
+ * A ticket type's form as a table (13 Nov: a 26-field brief read as one paragraph of "add X; show Y only when..."):
+ * every field the plan puts on the form, with its type, whether it's required, when it shows and its help text here.
+ */
+function formOf(s: PlanStep, extra: PlanStep[], plan: Plan, inv: Inv): { rows: FormRow[]; removed: string[] } | null {
+  if (s.object !== 'ticket_type') return null;
+  const all = [s, ...extra];
+  const entries = all.flatMap((x) => [...(x.fields ?? []), ...(x.set?.add_fields ?? [])]);
+  const mand = all.flatMap((x) => x.set?.field_mandatory ?? []);
+  const hints = all.flatMap((x) => x.set?.field_hints ?? []);
+  const rules = all.flatMap((x) => x.set?.show_field_when ?? []);
+  const removed = all.flatMap((x) => x.set?.remove_fields ?? []);
+  const step = (id: string) => plan.steps.find((x) => x.id === id);
+  const label = (id: string) => { const f = step(id); return f ? title(f, inv) : id; };
+  const rows: FormRow[] = [];
+  const seen = new Set<string>();
+  const add = (ref: string, required?: boolean, hint?: string) => {
+    if (seen.has(ref)) { const r = rows.find((x) => x.ref === ref); if (r && required !== undefined) r.required = required; return; }
+    seen.add(ref);
+    const f = step(ref);
+    const details = f && f.action !== 'create' ? inv?.details?.custom_fields?.[f.match?.name ?? ''] : undefined;
+    const type = f?.action === 'create' ? `${f.type ?? 'field'}${f.dynamic ? ' (live list)' : ''}${f.options?.length ? `: ${f.options.join(', ')}` : ''}` : (details?.match(/^"[^"]*"\s+([^:(]+)/)?.[1]?.trim() ?? 'existing field');
+    const own = f?.action === 'create' ? f.hint : details?.match(/\(hint: (.*)\)\s*$/)?.[1];
+    rows.push({ ref, label: label(ref), kind: type.replace(/\s*\[dynamic list\]/, ' (live list)').replace(/^multiselect/, 'multi-select'), isNew: f?.action === 'create', required, when: [], hint: hint ?? own });
+  };
+  for (const e of entries) add(e.ref, e.mandatory, (e as { hint?: string }).hint);
+  for (const m of mand) add(m.ref, m.mandatory);
+  for (const h of hints) { add(h.ref); const r = rows.find((x) => x.ref === h.ref); if (r) r.hint = h.hint; }
+  for (const c of rules) { add(c.field); rows.find((x) => x.ref === c.field)?.when.push(`${label(c.when)} is "${c.equals}"`); }
+  if (rows.length < 3 && !removed.length) return null;
+  return { rows, removed: removed.map(label) };
+}
+
+function FormTable({ form }: { form: { rows: FormRow[]; removed: string[] } }) {
+  return (
+    <div className="form-table-wrap">
+      <table className="form-table">
+        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Shows when</th><th>Help text on this form</th></tr></thead>
+        <tbody>
+          {form.rows.map((r) => (
+            <tr key={r.ref}>
+              <td><b>{r.label}</b>{r.isNew ? <span className="badge add tiny">new</span> : null}</td>
+              <td>{r.kind}</td>
+              <td>{r.required === undefined ? '' : r.required ? (r.when.length ? 'Yes, when shown' : 'Yes') : 'No'}</td>
+              <td>{r.when.length ? r.when.join(' or ') : 'Always'}</td>
+              <td className="hint-cell">{r.hint ?? ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {form.removed.length ? <p className="subtle">Taken off the form (the fields stay in Halo): {form.removed.join(', ')}</p> : null}
+    </div>
+  );
+}
+
 export type PlanState = 'ready' | 'questions' | 'problems';
 export function planState(plan: Plan | null, errors: string[]): PlanState {
   if (!plan || errors.length) return 'problems';
@@ -53,7 +110,16 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
     const host = foldInto(s);
     if (host) folded.set(host.id, [...(folded.get(host.id) ?? []), s]);
   }
-  const changes = steps.filter((s) => s.action !== 'reuse' && !foldInto(s));
+  const forms = new Map<string, { rows: FormRow[]; removed: string[] }>();
+  if (plan) for (const s of steps) { const f = formOf(s, folded.get(s.id) ?? [], plan, inventory); if (f && s.action !== 'reuse' && !foldInto(s)) forms.set(s.id, f); }
+  const onAForm = new Set([...forms.values()].flatMap((f) => f.rows.filter((r) => r.isNew).map((r) => r.ref)));
+  const ORDER: PlanStep['object'][] = ['ticket_type', 'service', 'service_category', 'workflow', 'approval_process', 'approval_group', 'team', 'sla', 'field_group', 'field'];
+  const rank = (s: PlanStep) => { const i = ORDER.indexOf(s.object); return i < 0 ? ORDER.length - 1 : i; };
+  const changes = steps.filter((s) => s.action !== 'reuse' && !foldInto(s)).map((s, i) => ({ s, i })).sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i).map((x) => x.s);
+  // New fields already shown in a form's table aren't listed again one by one.
+  const listed = changes.filter((s) => !(s.object === 'field' && s.action === 'create' && onAForm.has(s.id)));
+  const groups: { kind: PlanStep['object']; items: PlanStep[] }[] = [];
+  for (const s of listed) { const g = groups.at(-1); if (g && g.kind === s.object) g.items.push(s); else groups.push({ kind: s.object, items: [s] }); }
   const says = (s: PlanStep) => {
     if (!plan) return '';
     // A new workflow with stages added over several steps reads as one list, in order.
@@ -103,37 +169,72 @@ export function PlanView({ plan, errors, inventory, open = true, heading = 'Plan
       <section className="plan-section">
         <h3>{changes.length ? 'Changes to your Halo' : 'No changes needed'}</h3>
         {changes.length ? (
-          <ul className="diff">
-            {changes.map((s) => (
-              <li key={s.id} className={s.action === 'create' ? 'add' : 'change'}>
-                <span className="sign">{s.action === 'create' ? '+' : '~'}</span>
-                <div className="what">
-                  <b>{title(s, inventory)}</b> <span className="kind">{s.action === 'create' ? `new ${KIND[s.object]}` : KIND[s.object]}</span>
-                  <p>{says(s)}</p>
-                  {(() => {
-                    // Every change in full, one per line, for steps that do several things.
+          <>
+            {groups.map((g) => {
+              const items = (
+                <ul className="diff">
+                  {g.items.map((s) => {
+                    const form = forms.get(s.id);
                     const parts = plan ? [s, ...(folded.get(s.id) ?? [])].flatMap((x) => describeParts(x, plan, inventory)) : [];
-                    return parts.length > 1 ? (
-                      <details className="step-parts">
-                        <summary>{parts.length} changes in detail</summary>
-                        <ul>{parts.map((p, i) => <li key={i}>{p.charAt(0).toUpperCase() + p.slice(1)}</li>)}</ul>
-                      </details>
-                    ) : null;
-                  })()}
-                  {(() => {
-                    const email = emailOf(s, brand);
-                    return email ? (
-                      <details className="email-peek">
-                        <summary>Preview the email</summary>
-                        <EmailPreview subject={email.subject} html={email.html} title={`Preview of ${title(s, inventory)}`} />
-                        {!brand && target ? <a className="subtle" href={`/app/instances/${target.instanceId}/settings#branding`}>Add this client’s logo and colour</a> : null}
-                      </details>
-                    ) : null;
-                  })()}
-                </div>
-              </li>
-            ))}
-          </ul>
+                    const other = form ? parts.filter((p) => !/^(add |take .* off the form|show .* only when|make .* (required|optional)|.* help text on this form)/i.test(p)) : [];
+                    return (
+                      <li key={s.id} className={s.action === 'create' ? 'add' : 'change'}>
+                        <span className="sign">{s.action === 'create' ? '+' : '~'}</span>
+                        <div className="what">
+                          <b>{title(s, inventory)}</b> <span className="kind">{s.action === 'create' ? `new ${KIND[s.object]}` : KIND[s.object]}</span>
+                          {form ? (
+                            <>
+                              <p>
+                                {form.rows.length} field{form.rows.length === 1 ? '' : 's'} on the form ({form.rows.filter((r) => r.isNew).length} new)
+                                {form.rows.some((r) => r.when.length) ? `, ${form.rows.filter((r) => r.when.length).length} shown only for certain answers` : ''}
+                                {form.removed.length ? `, ${form.removed.length} taken off` : ''}
+                                {other.length ? `; ${other.join('; ')}` : ''}.
+                              </p>
+                              <details className="step-parts form-peek">
+                                <summary>See the form</summary>
+                                <FormTable form={form} />
+                              </details>
+                            </>
+                          ) : (
+                            <>
+                              <p>{says(s)}</p>
+                              {parts.length > 1 ? (
+                                <details className="step-parts">
+                                  <summary>{parts.length} changes in detail</summary>
+                                  <ul>{parts.map((p, i) => <li key={i}>{p.charAt(0).toUpperCase() + p.slice(1)}</li>)}</ul>
+                                </details>
+                              ) : null}
+                            </>
+                          )}
+                          {(() => {
+                            const email = emailOf(s, brand);
+                            return email ? (
+                              <details className="email-peek">
+                                <summary>Preview the email</summary>
+                                <EmailPreview subject={email.subject} html={email.html} title={`Preview of ${title(s, inventory)}`} />
+                                {!brand && target ? <a className="subtle" href={`/app/instances/${target.instanceId}/settings#branding`}>Add this client’s logo and colour</a> : null}
+                              </details>
+                            ) : null;
+                          })()}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+              // A long run of one kind (12 ticket rules, 30 bank holidays) folds into one line.
+              return g.items.length > 4 ? (
+                <details key={`${g.kind}-${g.items[0].id}`} className={`change-group ${g.items.every((x) => x.action === 'create') ? 'add' : 'change'}`}>
+                  <summary>
+                    <span className="sign">{g.items.every((x) => x.action === 'create') ? '+' : '~'}</span>
+                    <span>{g.items.length} {g.items.every((x) => x.action === 'create') ? 'new ' : ''}{KIND[g.kind]}{/s$/.test(KIND[g.kind]) ? '' : 's'}: {g.items.slice(0, 4).map((x) => title(x, inventory)).join(', ')}…</span>
+                    <IconChevron className="chev" size={14} />
+                  </summary>
+                  {items}
+                </details>
+              ) : <div key={`${g.kind}-${g.items[0].id}`}>{items}</div>;
+            })}
+          </>
         ) : (
           <p className="note">Everything this needs is already in your Halo.</p>
         )}

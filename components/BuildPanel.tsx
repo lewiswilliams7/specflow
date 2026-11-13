@@ -194,25 +194,6 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
           </span>
         ) : null}
       </div>
-      {running ? (() => {
-        const pct = total ? Math.round((Math.min(entries.length, total) / total) * 100) : 0;
-        const idle = Math.max(0, Math.round((now - lastEventAt) / 1000));
-        const mins = (ms: number) => { const t = Math.round(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
-        return (
-          <div className="build-meter">
-            <div className="meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Build progress">
-              <span style={{ width: `${total ? pct : 4}%` }} className={total ? '' : 'meter-wait'} />
-            </div>
-            <span className="subtle">
-              {total ? `${pct}% · ` : ''}{mins(now - startedAt)} elapsed{part > 1 ? ` · part ${part}` : ''}
-              {idle >= 30
-                ? ` · waiting on Halo for ${idle}s${idle >= 90 ? ' (slow, not stuck: long builds pause and carry on by themselves every 4 minutes)' : ''}`
-                : ' · working'}
-            </span>
-          </div>
-        );
-      })() : null}
-
       {mode === 'preview' && !done && !running && !error ? null : (
         <ul className="diff build-steps" aria-live="polite">
           {entries.map((e) => {
@@ -231,6 +212,26 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
           })}
         </ul>
       )}
+
+      {/* Under the steps and stuck to the bottom of the screen, so a long build never hides it (13 Nov). */}
+      {running ? (() => {
+        const pct = total ? Math.round((Math.min(entries.length, total) / total) * 100) : 0;
+        const idle = Math.max(0, Math.round((now - lastEventAt) / 1000));
+        const mins = (ms: number) => { const t = Math.round(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+        return (
+          <div className="build-meter build-status">
+            <div className="meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Build progress">
+              <span style={{ width: `${total ? pct : 4}%` }} className={total ? '' : 'meter-wait'} />
+            </div>
+            <span className="subtle">
+              {total ? `${pct}% · ` : ''}{mins(now - startedAt)} elapsed{part > 1 ? ` · part ${part}` : ''}
+              {idle >= 30
+                ? ` · waiting on Halo for ${idle}s${idle >= 90 ? ' (slow, not stuck: long builds pause and carry on by themselves every 4 minutes)' : ''}`
+                : ' · working'}
+            </span>
+          </div>
+        );
+      })() : null}
 
       {error ? <p className="notice error">{error}</p> : null}
 
