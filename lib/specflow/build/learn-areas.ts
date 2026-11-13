@@ -56,6 +56,10 @@
  * Round 40 (13 Nov): user access on services and categories ("Everyone" vs restricted), and the portal's
  * "Report an Issue" button and which ticket type it logs. Read first; one change on a zz category.
  *
+ * Round 41 (13 Nov): round 40 found every Halo category and service carries one restriction group with one criterion of
+ * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
+ * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -66,7 +70,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 40;
+export const ROUND = 41;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -267,38 +271,23 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('user access', async () => {
-    const A = 'user access';
-    const ACCESS = /access|restrict|group_user|everyone|allusers|all_users|visible|enduser/i;
-    for (const [ep, label] of [['ServiceCategory', 'category'], ['Service', 'service']] as const) {
-      const rows = (await list(ep)).rows;
-      const spread: Record<string, string[]> = {};
-      for (const r of rows.slice(0, 25)) {
-        const d = await detail(ep, r.id);
-        const k = `access_control_level ${d?.access_control_level ?? '?'} / restriction groups ${Array.isArray(d?.group_user_access) ? (d!.group_user_access as unknown[]).length : '?'}`;
-        (spread[k] ??= []).length < 5 && spread[k].push(`${r.id} ${nameOf(r)}`);
-      }
-      note(A, `${label}: access level and restriction groups, with examples`, spread);
-      const one = rows.find((r) => own(r));
-      if (one) note(A, `${label} ${one.id} ${nameOf(one)}: access settings`, pick(await detail(ep, one.id), ACCESS));
-    }
-    summary.push('· user access: in Halo open two of the records listed under each access_control_level and tell Claude which one says "Everyone" under User Access');
-  });
 
-  await area('report an issue', async () => {
-    const A = 'report an issue';
-    await discover(A, 'portal menu', ['PortalMenu', 'MenuItem', 'PortalConfig', 'Portal', 'WebPortal', 'Shortcut', 'ShortcutButton', 'PortalTile', 'Tile', 'SelfServicePortal']);
-    // Settings that name a default ticket type for end users or the portal.
-    const seen: Record<string, unknown> = {};
-    for (const t of (await list('TicketType')).rows.filter(own).slice(0, 30)) {
-      const d = await detail('TicketType', t.id);
-      for (const [k, v] of Object.entries(d ?? {})) if (/default|enduser|portal|newticket|report/i.test(k) && (v === true || (typeof v === 'number' && v > 0)) && !(k in seen)) seen[k] = { form: `${t.id} ${nameOf(t)}`, value: short(v) };
+  await area('everyone', async () => {
+    const A = 'everyone';
+    // Halo's own shape (category 8, service 122), without its ids, so Halo makes new ones.
+    const everyone = [{ type: 4, desc: 'Restriction Group 1', seq: 1, allow_access: true, user_access: [{ type: 'X', data_id: 0, data_name: '', allow_access: true, data_string: '' }] }];
+    const sub = (await list('ServiceCategory')).rows.find((c) => nameOf(c) === 'zz Enact r36 subcategory');
+    const svc = (await list('Service')).rows.find((r) => nameOf(r) === 'zz Enact r30 service');
+    for (const [ep, rec, label] of [['ServiceCategory', sub, 'zz category 26'], ['Service', svc, 'zz service 170']] as const) {
+      if (!rec) { note(A, `${label} skipped`, 'missing'); continue; }
+      note(A, `${label} before`, pick(await detail(ep, rec.id), /^(access_control_level|group_user_access)$/));
+      if (!apply) continue;
+      try {
+        await runtime().halo.post(`/${ep}`, [{ id: Number(rec.id), group_user_access: everyone }]);
+        note(A, `${label} after`, pick(await detail(ep, rec.id), /^(access_control_level|group_user_access)$/));
+      } catch (e) { note(A, `${label} error`, err(e)); }
     }
-    note(A, 'ticket type settings in use that mention default, end user or portal', seen);
-    for (const ep of ['Config', 'Settings', 'Controller']) {
-      const r = await list(ep);
-      note(A, `${ep}`, r.error ? `error: ${r.error.slice(0, 120)}` : `${r.rows.length} rows; keys ${Object.keys(r.rows[0] ?? {}).filter((k) => /portal|default|enduser|report|newticket|tickettype/i.test(k)).join(', ')}`);
-    }
+    summary.push('· everyone: in Halo open the service category "zz Enact r36 subcategory" and the service "zz Enact r30 service" and check User Access says Everyone');
   });
 
   return { out, summary };
