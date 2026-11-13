@@ -44,6 +44,13 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
   const all = [...SUITE.map((s, index) => ({ ...s, index, pasted: false })), ...own.map((o) => ({ ...o, index: -1, pasted: true }))];
   const [pick, setPick] = useState<Set<string>>(new Set(SUITE.map((s) => s.id)));
   const [build, setBuild] = useState(false);
+  // Cost (13 Nov: seven briefs cost about £5): re-check the last plans with no model calls after a fix to the checks or
+  // the builder, and re-plan only the briefs that failed.
+  const [mode, setMode] = useState<'plan' | 'recheck'>('recheck');
+  const [onlyFailed, setOnlyFailed] = useState(true);
+  type Saved = Record<string, { request: string; plan: unknown; passed?: boolean }>;
+  const readSaved = (): Saved => { try { return JSON.parse(localStorage.getItem('enact-suite-saved') ?? '{}'); } catch { return {}; } };
+  const writeSaved = (id: string, patch: Partial<Saved[string]>) => { try { const all = readSaved(); all[id] = { ...(all[id] ?? { request: '', plan: null }), ...patch }; localStorage.setItem('enact-suite-saved', JSON.stringify(all)); } catch { /* storage full or off */ } };
   const [busy, setBusy] = useState(false);
   const [tag, setTag] = useState('');
   const ctrl = useRef<AbortController | null>(null);
@@ -54,7 +61,8 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
     if (!trial) return;
     const t = Math.floor(Date.now() / 60000).toString(36).slice(-4);
     setTag(t);
-    const chosen = all.filter((s) => pick.has(s.id));
+    const saved = readSaved();
+    const chosen = all.filter((s) => pick.has(s.id) && !(onlyFailed && saved[s.id]?.passed));
     const start: Row[] = chosen.map((s) => ({ id: s.id, title: s.title, status: 'waiting' }));
     setRows(start);
     setBusy(true);
@@ -67,8 +75,16 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
       let request = tagBrief(s.brief, t);
       let which: { brief_text: string } | { index: number } = s.pasted ? { brief_text: s.brief } : { index: s.index };
       try {
-        update(i, { status: 'planning' });
         const t0 = Date.now();
+        let res: { plan: Record<string, unknown> | null; errors: string[] };
+        if (mode === 'recheck') {
+          const last = saved[s.id];
+          if (!last?.plan) { update(i, { status: 'no saved plan: plan it once first' }); continue; }
+          update(i, { status: 're-checking (no model calls)' });
+          request = last.request;
+          res = await post('/api/admin/suite', { ...base, op: 'recheck', plan: last.plan, request }, signal);
+        } else {
+        update(i, { status: 'planning' });
         // M17: a long prose brief is split first, as in a customer's conversation.
         if (!splitForms(request) && request.length >= 800) {
           update(i, { status: 'splitting' });
@@ -77,7 +93,6 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
           update(i, { status: 'planning' });
         }
         const split = splitForms(request);
-        let res: { plan: Record<string, unknown> | null; errors: string[] };
         if (split) {
           const partsInfo: { title: string; first: number; after: number }[] = [];
           const parts = await Promise.all(split.forms.map(async (_, index) => {
@@ -97,6 +112,8 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
         } else {
           res = await post('/api/admin/suite', { ...base, op: 'plan', ...which }, signal);
           update(i, { firstPassClean: res.errors.length === 0 });
+        }
+        if (res.plan) writeSaved(s.id, { request, plan: res.plan, passed: false });
         }
         const plan = res.plan as { steps?: { object: string; action: string }[]; questions?: unknown[]; unsupported?: string[]; assumptions?: unknown[] } | null;
         const steps: Record<string, number> = {};
@@ -129,10 +146,11 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
         const pv = await runBuild(false);
         update(i, { preview: { ok: pv.ok, problems: pv.problems, outcomes: pv.outcomes, seconds: pv.seconds } });
         if (!pv.ok) { update(i, { status: 'preview found problems' }); continue; }
-        if (!build) { update(i, { status: 'passed (preview)' }); continue; }
+        if (!build) { update(i, { status: 'passed (preview)' }); writeSaved(s.id, { passed: true }); continue; }
         update(i, { status: 'building' });
         const bd = await runBuild(true);
         update(i, { build: bd, status: bd.ok && !bd.errors.length ? 'built and checked' : 'build had problems' });
+        if (bd.ok && !bd.errors.length) writeSaved(s.id, { passed: true });
         await post('/api/admin/suite', { ...base, op: 'refresh' }, signal).catch(() => null);
       } catch (e) {
         update(i, { status: 'stopped', error: (e as Error).message });
@@ -179,7 +197,12 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
             <textarea className="input" rows={6} placeholder="Paste the brief" value={draft.brief} onChange={(e) => setDraft({ ...draft, brief: e.target.value })} />
             <button className="btn" disabled={!draft.title.trim() || !draft.brief.trim()} onClick={() => { const id = `own-${Date.now()}`; saveOwn([...own, { id, title: draft.title.trim(), brief: draft.brief.trim() }]); setPick((p) => new Set(p).add(id)); setDraft({ title: '', brief: '' }); }}>Add</button>
           </details>
-          <label className="subtle"><input type="checkbox" checked={build} disabled={busy} onChange={(e) => setBuild(e.target.checked)} /> Also build on {trial.name} (writes zz objects; never deletes)</label>
+          <div className="suite-opts">
+            <label className="subtle"><input type="radio" name="suite-mode" checked={mode === 'recheck'} disabled={busy} onChange={() => setMode('recheck')} /> Re-check the last plans (free: no model calls). Use after a fix to the checks or the builder.</label>
+            <label className="subtle"><input type="radio" name="suite-mode" checked={mode === 'plan'} disabled={busy} onChange={() => setMode('plan')} /> Plan again (about 50p–£1 a brief). Use after a change to the planner.</label>
+            <label className="subtle"><input type="checkbox" checked={onlyFailed} disabled={busy} onChange={(e) => setOnlyFailed(e.target.checked)} /> Only briefs that didn’t pass last time</label>
+            <label className="subtle"><input type="checkbox" checked={build} disabled={busy} onChange={(e) => setBuild(e.target.checked)} /> Also build on {trial.name} (writes zz objects; never deletes)</label>
+          </div>
           <div className="row" style={{ gap: 8, marginTop: 10 }}>
             <button className="btn primary" disabled={busy || !pick.size} onClick={run}>{busy ? 'Running…' : `Run ${pick.size} brief${pick.size === 1 ? '' : 's'}`}</button>
             {busy ? <button className="btn" onClick={() => ctrl.current?.abort()}>Stop</button> : null}

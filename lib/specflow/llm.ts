@@ -10,12 +10,14 @@ export type CompleteOptions = {
   signal?: AbortSignal;
   /** Groups calls for OpenAI's prompt cache (same instance, same prefix). */
   cacheKey?: string;
+  /** A cheaper model for simple jobs (the brief splitter). Ignored when PLANNER_MODEL is set or on Anthropic. */
+  model?: string;
 };
 
 export async function complete(system: string, user: string, opts: CompleteOptions = {}): Promise<{ text: string; model: string }> {
   const override = process.env.PLANNER_MODEL?.trim();
   if (process.env.OPENAI_API_KEY) {
-    const model = override || 'gpt-5';
+    const model = override || opts.model || 'gpt-5';
     const base = (process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/$/, '');
     const res = await fetch(`${base}/chat/completions`, {
       method: 'POST',

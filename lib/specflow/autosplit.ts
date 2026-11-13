@@ -21,7 +21,8 @@ export async function autoSplit(brief: string, opts: { signal?: AbortSignal; cac
   // brief, 1,400 characters, took 147s in one go and had no time left to fix).
   if (brief.length < 800 || lines.length < 4) return null;
   const numbered = lines.map((l, i) => `${i + 1}: ${l}`).join('\n');
-  const reply = await complete(SYSTEM, numbered, { effort: 'low', ...opts });
+  // Finding line ranges is simple: the small model at minimal effort costs about a twentieth of a planning call.
+  const reply = await complete(SYSTEM, numbered, { effort: 'minimal', model: process.env.SPLIT_MODEL?.trim() || 'gpt-5-mini', ...opts });
   let parsed: { shared?: number[][]; forms?: { title?: string; lines?: number[][] }[] };
   try {
     parsed = JSON.parse(reply.text);

@@ -353,7 +353,7 @@ function dropRepeatedQuestions(plan: Plan) {
 }
 
 export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
-export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high'; /** Epoch ms the request must finish by: a fix pass that can't finish in time is skipped, so the user gets the plan and its problems instead of a timeout (13 Nov run-through: 504s). */ deadline?: number };
+export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high'; /** Epoch ms the request must finish by: a fix pass that can't finish in time is skipped, so the user gets the plan and its problems instead of a timeout (13 Nov run-through: 504s). */ deadline?: number; /** Plan once with no second full pass: the caller runs its own, cheaper fix (a patch). 13 Nov: a failing form part paid for two full plans and then a fix. */ once?: boolean };
 
 // Plan text that is never a step id, even when it happens to match one (a label, an option, a stage name...).
 const TEXT_KEYS = new Set(['name', 'label', 'hint', 'subject', 'body', 'summary', 'equals', 'copy_of', 'based_on', 'after_step', 'to_step', 'step', 'description', 'options', 'add_options', 'list', 'type', 'object', 'action', 'by', 'event', 'sla_action', 'resolve_days', 'targets']);
@@ -610,6 +610,14 @@ export function attachUnusedWorkflows(plan: Plan) {
   plan.steps = orderByDependency(steps);
 }
 
+/** Re-run the code repairs and checks on a saved plan, with no model call (the run-through's free re-check). */
+export function recheckPlan(inventory: Inventory, request: string, plan: Plan): string[] {
+  applyWrittenOptions(plan, request, inventory);
+  attachUnusedWorkflows(plan);
+  applyWrittenRequirement(plan, request, inventory);
+  return makePlanner(inventory, request, {}).validate(plan);
+}
+
 /** M14: merge forms planned separately (in their own requests) and check the result like any plan. */
 export async function mergeAndCheck(inventory: Inventory, request: string, parts: { title: string; plan: Plan | null; errors: string[] }[], ctx: PlanContext = {}, opts: GenerateOptions = {}): Promise<PlanResult> {
   const ok = parts.filter((r) => r.plan) as { title: string; plan: Plan }[];
@@ -663,7 +671,7 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
   let errors: string[] = [];
   let model = '';
   const started = Date.now();
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= (opts.once ? 1 : 2); attempt++) {
     // A second pass takes about as long as the first: skip it if it would run past the deadline.
     if (attempt > 1 && opts.deadline && Date.now() + (Date.now() - started) + 10_000 > opts.deadline) break;
     opts.onStage?.(attempt === 1 ? (revising ? 'revising' : 'planning') : 'fixing', attempt === 1 ? undefined : `${errors.length}`);

@@ -10,7 +10,7 @@ import { memoryTemplates, withRuntime } from '@/lib/specflow/build/runtime';
 import { READ_ONLY_MESSAGE, assertPublicHost, haloClient } from '@/lib/specflow/halo';
 import { readInventory } from '@/lib/specflow/inventory';
 import type { Plan } from '@/lib/specflow/plan-types';
-import { generatePlan, mergeAndCheck, type Inventory } from '@/lib/specflow/planner';
+import { generatePlan, mergeAndCheck, recheckPlan, type Inventory } from '@/lib/specflow/planner';
 import { SUITE, tagBrief } from '@/lib/suite';
 import { supabaseServer } from '@/lib/supabase/server';
 import { getContext } from '@/lib/workspace';
@@ -22,7 +22,9 @@ export const dynamic = 'force-dynamic';
 const json = (status: number, error: string) => Response.json({ error }, { status });
 
 type Body = {
-  op?: 'plan' | 'merge' | 'build' | 'refresh';
+  op?: 'plan' | 'merge' | 'build' | 'refresh' | 'recheck';
+  /** recheck: the brief as it was planned (already tagged and split). */
+  request?: string;
   instance_id?: string;
   index?: number;
   /** A brief pasted in the panel (kept in the founder's browser, never in this public repo). */
@@ -61,6 +63,13 @@ export async function POST(req: Request) {
       const inventory = await readInventory(halo);
       await supabase.from('instances').update({ inventory, inventory_at: new Date().toISOString() }).eq('id', inst.id);
       return Response.json({ ok: true });
+    }
+    if (body.op === 'recheck') {
+      // No model call: the saved plan through today's code repairs and checks.
+      if (!body.plan || !inst.inventory) return json(400, 'No plan, or the instance hasn’t been read.');
+      const plan = body.plan;
+      const errors = recheckPlan(inst.inventory as Inventory, String(body.request ?? ''), plan);
+      return Response.json({ plan, errors, model: 'none' });
     }
     if (body.op === 'plan' || body.op === 'merge') {
       if (!brief) return json(400, 'No such brief.');

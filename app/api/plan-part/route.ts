@@ -43,7 +43,9 @@ export async function POST(req: Request) {
     if (result.plan) delete result.plan.fresh;
   } else {
     // Transcribing a written form design: low reasoning keeps each part well inside the time limit.
-    result = await generatePlan(inst.inventory as Inventory, request, { requester: { email: user.email ?? '' } }, opts);
+    // One pass: if it has problems the browser asks for a fix, which comes back as a small patch (cheaper than a second
+    // full plan).
+    result = await generatePlan(inst.inventory as Inventory, request, { requester: { email: user.email ?? '' } }, { ...opts, once: true });
   }
   return Response.json({ title, plan: result.plan, errors: result.errors, model: result.model, seal: sealPart(inst.id, title, result.plan) });
 }
