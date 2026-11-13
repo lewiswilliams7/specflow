@@ -47,6 +47,9 @@
  * twice (with and without Service Request Details in the same save). Does a zz service that has request details keep them?
  * And how does Halo's own record show summary vs the portal text?
  *
+ * Round 38 (13 Nov): what Compleat still needs by hand. Field types for rich text, tables and attachments; the ticket type's
+ * attachment settings; renaming a service; moving a service category; a live list of Halo's departments.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -57,7 +60,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 37;
+export const ROUND = 38;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -255,19 +258,55 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('service summary', async () => {
-    const A = 'service summary';
-    const all = (await list('Service')).rows;
-    const zz = all.find((r) => nameOf(r) === 'zz Enact r30 service');
-    // Halo's own services: every key that looks like the portal text or the ticket type, to compare with what we send.
-    for (const s of all.filter(own).slice(0, 3)) note(A, `Halo own: ${s.id} ${nameOf(s)}`, pick(await detail('Service', s.id), /summary|desc|note|tickettype|request|portal|catalog|displayname|template/i));
-    if (!zz) { note(A, 'skipped', 'zz Enact r30 service missing'); return; }
-    note(A, 'zz before', pick(await detail('Service', zz.id), /summary|desc|note|tickettype|requestdetails_count/i));
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r30 type' || nameOf(t) === 'zz Enact r36 form');
-    await update(A, 'summary alone', 'Service', Number(zz.id), { summary: 'zz Enact r37 summary alone' });
-    if (tt) await update(A, 'ticket type alone', 'Service', Number(zz.id), { service_tickettype_id: Number(tt.id) });
-    await update(A, 'summary and category together', 'Service', Number(zz.id), { summary: 'zz Enact r37 summary with category', service_category_id: Number((await detail('Service', zz.id))?.service_category_id ?? 0) });
-    note(A, 'zz after', pick(await detail('Service', zz.id), /summary|desc|note|tickettype|requestdetails_count/i));
+
+  await area('field types', async () => {
+    const A = 'field types';
+    const fields = (await list('FieldInfo')).rows;
+    // Every type Halo uses, with a few example fields, so rich text / table / attachment can be named from evidence.
+    const byType: Record<string, string[]> = {};
+    for (const f of fields) { const k = `type ${f.type ?? '?'} / inputtype ${f.inputtype ?? '?'}`; (byType[k] ??= []).length < 4 && byType[k].push(`${f.id} ${f.name} "${f.label ?? ''}"`); }
+    note(A, 'type / inputtype with examples', byType);
+    const look = fields.filter((f) => /rich|table|attach|upload|signature|html|grid/i.test(`${f.name} ${f.label}`)).slice(0, 8);
+    for (const f of look) note(A, `${f.id} ${f.name}`, pick(await detail('FieldInfo', f.id), /^(type|inputtype|name|label|.*table.*|.*column.*|.*rich.*|.*html.*|.*attach.*|.*upload.*|.*file.*)$/i));
+  });
+
+  await area('ticket type attachments', async () => {
+    const A = 'ticket type attachments';
+    const tt = (await list('TicketType')).rows.filter(own);
+    const seen: Record<string, unknown> = {};
+    for (const t of tt.slice(0, 12)) {
+      const d = await detail('TicketType', t.id);
+      for (const [k, v] of Object.entries(d ?? {})) if (/attach|upload|file|document/i.test(k) && !(k in seen)) seen[k] = { form: nameOf(t), value: short(v) };
+    }
+    note(A, 'attachment-like keys across Halo forms', seen);
+  });
+
+  await area('rename and move', async () => {
+    const A = 'rename and move';
+    const zz = (await list('Service')).rows.find((r) => nameOf(r) === 'zz Enact r30 service');
+    if (zz) {
+      await update(A, 'service rename', 'Service', Number(zz.id), { name: 'zz Enact r38 service renamed' });
+      await update(A, 'service rename back', 'Service', Number(zz.id), { name: 'zz Enact r30 service' });
+    } else note(A, 'service skipped', 'zz Enact r30 service missing');
+    const cats = (await list('ServiceCategory')).rows;
+    const sub = cats.find((c) => nameOf(c) === 'zz Enact r36 subcategory');
+    const other = cats.find((c) => own(c) && Number(c.id) !== Number(sub?.parent_id));
+    if (sub && other) {
+      const was = Number(sub.parent_id ?? 0);
+      await update(A, `category move to ${other.id} ${nameOf(other)}`, 'ServiceCategory', Number(sub.id), { parent_id: Number(other.id) });
+      await update(A, 'category move back', 'ServiceCategory', Number(sub.id), { parent_id: was });
+      await update(A, 'category rename', 'ServiceCategory', Number(sub.id), { name: 'zz Enact r38 subcategory renamed' });
+      await update(A, 'category rename back', 'ServiceCategory', Number(sub.id), { name: 'zz Enact r36 subcategory' });
+    } else note(A, 'category skipped', { sub: !!sub, other: !!other });
+  });
+
+  await area('departments', async () => {
+    const A = 'departments';
+    const d = await discover(A, 'departments', ['Department', 'Departments']);
+    if (d?.rows.length) note(A, 'names', d.rows.slice(0, 10).map((r) => `${r.id} ${nameOf(r)}`));
+    // Halo's own live-list fields: the SQL they use, to see whether one reads departments.
+    const dyn = (await list('FieldInfo')).rows.filter((f) => /sql|lookup/i.test(JSON.stringify(pick(f, /^(type|inputtype|.*sql.*)$/i))));
+    for (const f of dyn.slice(0, 6)) note(A, `live list ${f.id} ${f.name}`, pick(await detail('FieldInfo', f.id), /sql|lookup|type/i));
   });
 
   return { out, summary };
