@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
   const title = split.forms[i].title;
   const request = formRequest(split, i);
-  const opts = { signal: req.signal, cacheKey: `specflow-${inst.id}`, effort: 'low' as const };
+  const opts = { signal: req.signal, cacheKey: `specflow-${inst.id}`, effort: 'low' as const, deadline: Date.now() + 280_000 };
   let result;
   if (body.fix) {
     // A part that came back with problems: one more pass on that part alone, as a revision of its own plan.

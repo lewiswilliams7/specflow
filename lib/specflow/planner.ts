@@ -353,7 +353,7 @@ function dropRepeatedQuestions(plan: Plan) {
 }
 
 export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
-export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high' };
+export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high'; /** Epoch ms the request must finish by: a fix pass that can't finish in time is skipped, so the user gets the plan and its problems instead of a timeout (13 Nov run-through: 504s). */ deadline?: number };
 
 // Plan text that is never a step id, even when it happens to match one (a label, an option, a stage name...).
 const TEXT_KEYS = new Set(['name', 'label', 'hint', 'subject', 'body', 'summary', 'equals', 'copy_of', 'based_on', 'after_step', 'to_step', 'step', 'description', 'options', 'add_options', 'list', 'type', 'object', 'action', 'by', 'event', 'sla_action', 'resolve_days', 'targets']);
@@ -565,6 +565,8 @@ export function applyWrittenOptions(plan: Plan, request: string, inventory: Inve
  * had to reply to get a second attempt). The fix is kept only if it has fewer problems. */
 async function fixMerged(inventory: Inventory, request: string, plan: Plan, errors: string[], keep: number, ctx: PlanContext, opts: GenerateOptions, validate: (p: Plan) => string[]): Promise<{ plan: Plan; errors: string[] }> {
   if (errors.length <= keep || opts.signal?.aborted) return { plan, errors };
+  // A fix pass takes a minute or two: not if the request would time out first.
+  if (opts.deadline && Date.now() + 150_000 > opts.deadline) return { plan, errors };
   opts.onStage?.('fixing', `${errors.length - keep}`);
   const fix = await generatePlan(inventory, `Fix these problems in the current plan and change nothing else:\n- ${errors.slice(keep).join('\n- ')}`, { requester: ctx.requester, previous: plan, history: [{ role: 'user', text: request }] }, { ...opts, effort: 'low' }).catch(() => null);
   if (!fix?.plan || fix.plan.fresh) return { plan, errors };
@@ -625,7 +627,10 @@ export async function generatePlan(inventory: Inventory, request: string, ctx: P
   let plan: Plan | null = null;
   let errors: string[] = [];
   let model = '';
+  const started = Date.now();
   for (let attempt = 1; attempt <= 2; attempt++) {
+    // A second pass takes about as long as the first: skip it if it would run past the deadline.
+    if (attempt > 1 && opts.deadline && Date.now() + (Date.now() - started) + 10_000 > opts.deadline) break;
     opts.onStage?.(attempt === 1 ? (revising ? 'revising' : 'planning') : 'fixing', attempt === 1 ? undefined : `${errors.length}`);
     const extra =
       attempt === 1

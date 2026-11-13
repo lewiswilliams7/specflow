@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   const text = body.brief_text ? String(body.brief_text).slice(0, 120000) : SUITE[Number(body.index)]?.brief;
   const brief = text ? { brief: text } : null;
   const request = brief ? tagBrief(brief.brief, String(body.tag ?? 'x').replace(/[^A-Za-z0-9]/g, '').slice(0, 8)) : '';
-  const opts = { signal: req.signal, cacheKey: `specflow-${inst.id}` };
+  const opts = { signal: req.signal, cacheKey: `specflow-${inst.id}`, deadline: Date.now() + 280_000 };
   const ctx = { requester: { email: user.email ?? '' } };
 
   try {

@@ -68,7 +68,10 @@ function overlap(a: string, b: string): number {
   return n / Math.min(A.size, B.size);
 }
 
-const CONDITIONAL_APPROVAL = /approv/i;
+// About an approval STEP (approval process, approver, "approved by"), not a permission to approve something (13 Nov
+// run-through: "a role ... the right to approve purchase orders" blocked every form's approval in Northgate).
+const CONDITIONAL_APPROVAL = /\b(approval|approvals|approver|approvers|approved by|approves? (the|this|it|each|every|when|if|only)|needs? (approval|to be approved)|sign[- ]off)\b/i;
+const NOT_AN_APPROVAL_STEP = /\b(role|permission|permissions|right to approve|privilege)\b/i;
 const CONDITION = /\b(only|if|when|unless|condition|conditional|depend|depends|based on|value|threshold|over|under|above|below)\b|[£$€]\s?\d/i;
 const EVERY_TICKET_APPROVED = /\b(every|all)\s+(\S+\s+){0,4}tickets?\b[^.]*\bapprov/i;
 
@@ -118,7 +121,7 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   }
 
   // M6: an approval that should depend on a condition we can't build must not be attached to every ticket.
-  const conditional = (plan.unsupported ?? []).find((u) => CONDITIONAL_APPROVAL.test(u) && CONDITION.test(u));
+  const conditional = (plan.unsupported ?? []).find((u) => CONDITIONAL_APPROVAL.test(u) && CONDITION.test(u) && !NOT_AN_APPROVAL_STEP.test(u));
   const everyTicketMeant = (plan.assumptions ?? []).some((a) => EVERY_TICKET_APPROVED.test(a));
   if (conditional && !everyTicketMeant) {
     for (const s of steps) {
