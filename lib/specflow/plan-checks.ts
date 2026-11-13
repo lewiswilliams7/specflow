@@ -296,7 +296,8 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   };
   for (const s of steps) {
     // SC1 (round 36): categories can be created, each under a parent (or at the top level); never updated.
-    if (s.object === 'service_category' && s.action === 'update' && !(s.set?.name && Object.keys(s.set).length === 1)) errors.push(`step "${s.id}": a service category can only be renamed (set: { name })`);
+    if (s.object === 'service_category' && s.action === 'update' && Object.keys(s.set ?? {}).some((k) => !['name', 'parent', 'top_level'].includes(k))) errors.push(`step "${s.id}": a service category can only be renamed or moved (set: { name, parent, top_level })`);
+    if (s.object === 'service_category' && s.action === 'update' && s.set?.parent) needKind(s, s.set.parent, 'service_category', 'set.parent');
     // SC2 (round 38): "The maximum number of Service Category tiers is 3".
     if (s.object === 'service_category' && s.action !== 'update') {
       const depth = (st: PlanStep | undefined, n = 0): number => {

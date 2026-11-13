@@ -41,11 +41,11 @@ const TYPE: Record<string, string> = {
   text: 'text', memo: 'memo', 'single selection': 'single selection', dropdown: 'single selection', 'multiple selection': 'multiple selection',
   date: 'date', 'date and time': 'date', checkbox: 'checkbox', number: 'text (numbers)', currency: 'text (an amount)',
   'user lookup': 'user picker (live list of Halo users)',
+  rich: 'rich text', 'rich text': 'rich text',
 };
 const NOT_BUILT: Record<string, string> = {
-  attachment: "Attachment: NOT BUILT (Halo's own ticket attachments cover this)",
+  attachment: "Attachment: not a field. Allow attachments on the form (T9); required on every ticket only if the design says mandatory with no show rule",
   table: 'Table: NOT BUILT',
-  rich: 'Rich text: NOT BUILT',
 };
 const HALO_OWN: Record<string, string> = {
   requester: "from Halo's own user on the ticket; nothing to create",

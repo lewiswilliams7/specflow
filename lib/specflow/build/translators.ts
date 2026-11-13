@@ -294,6 +294,8 @@ export const SPIKE_MAP = {
   assetFields: { rows: 'fields' as string | null, builder: 'built' as string | null }, // round 33: type 162 built with Name, Serial Number, Model, Date Purchased in order; re-run reused it // round 32: type 161 built + re-run reused; fields rows { field_id, field_name, sequence, type, tab_id, techdetail, userdetail } sent to type 160 were kept (catalogue: /AssetTypeInfo). fields: on after round 33's builder proof
   /** Retire a ticket type (T8, round 29: visible false on type 56, gone from the lists). */
   retire: { key: 'visible' as string | null },
+  /** Round 39: zz Enact r36 form kept allowattachments true and minattachments 1 (rule T9). */
+  attachments: { allow: 'allowattachments' as string | null, min: 'minattachments' as string | null },
   /** Remove a field from a form (round 28: rows sent without field 312 → gone from type 56). */
   removeFields: { by: 'rows' as string | null },
   runbook: {
@@ -394,7 +396,7 @@ export const FEATURES: Feature[] = [
     key: 'services',
     name: 'services in the service catalogue',
     sections: ['service', 'serviceCategory', 'builderProof'],
-    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { name? (rename), summary?, ticket_type?, service_category?, show_on_portal? }. A service category can be renamed: service_category update set: { name }. Halo allows at most THREE levels of service categories (SC2, e.g. HR > Recruitment > Onboarding): a deeper path goes in its third level, and say so in assumptions. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
+    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { name? (rename), summary?, ticket_type?, service_category?, show_on_portal? }. A service category can be renamed or moved: service_category update set: { name?, parent?: ref of another service_category, top_level?: true }. Order moves so no category is ever four levels deep, and never move a category under itself or its own child (move the child out first). Halo allows at most THREE levels of service categories (SC2, e.g. HR > Recruitment > Onboarding): a deeper path goes in its third level, and say so in assumptions. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
   },
   {
     key: 'imports',
@@ -433,7 +435,8 @@ export const FEATURES: Feature[] = [
     key: 'read_only',
     name: 'read-only fields on a form',
     sections: ['readOnly'],
-    prompt: `- A field that should show but not be typed in (e.g. filled in automatically): ticket_type update set: { read_only: [field refs] }, in the SAME step as the add_fields that puts a new field on the form.`,
+    prompt: `- Attachments are a setting on the form, not a field (T9): ticket_type update (or create) set: { attachments: { allow: true, min: 0 } }; min: 1 when the request says an attachment is required on EVERY ticket (a conditional or optional upload stays min 0, and say in assumptions it can't be required only sometimes). Never create a field for an upload.
+- A field that should show but not be typed in (e.g. filled in automatically): ticket_type update set: { read_only: [field refs] }, in the SAME step as the add_fields that puts a new field on the form.`,
   },
   {
     key: 'roles',
@@ -1040,6 +1043,11 @@ export interface PlanStep {
     read_only?: string[];
     /** ticket_type: retire it (T8: visible false). Never deleted. */
     retire?: boolean;
+    /** ticket_type: attachments on the form (T9): allow them, and how many are required (0 = optional). */
+    attachments?: { allow?: boolean; min?: number };
+    /** service_category: move under another category (a service_category ref), or top_level: true (SC1, round 39). */
+    top_level?: boolean;
+    parent?: string;
     /** ticket_type / field_group: take these fields off the form (the fields stay in Halo). */
     remove_fields?: string[];
     /** service */
@@ -1645,6 +1653,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
         else if (Number(current[key]) !== Number(id)) out[key] = id;
       }
       if (st.retire && SPIKE_MAP.retire.key) out[SPIKE_MAP.retire.key] = false; // rule T8
+      if (st.attachments) {
+        // Rule T9: attachments are a setting on the form, not a field.
+        const a = SPIKE_MAP.attachments;
+        if (st.attachments.allow !== undefined && a.allow) out[a.allow] = st.attachments.allow;
+        if (st.attachments.min !== undefined && a.min) { out[a.min] = st.attachments.min; if (st.attachments.min > 0 && a.allow) out[a.allow] = true; }
+      }
       if (st.read_only?.length) {
         const ro = SPIKE_MAP.readOnly;
         const key = m.fields as string;
@@ -1770,10 +1784,16 @@ export const translators: Record<PlanStep['object'], Translator> = {
       return p;
     },
     // Round 38: category 26 kept a rename. Moving to another parent isn't proven (round 39), so only the name changes.
-    update: (step, _refs, warn) => {
-      if (step.set?.name) return { name: step.set.name };
-      warn('service category update: only a rename is supported');
-      return {};
+    // Round 38: rename kept; round 39: parent_id 0 and back to 8 kept (moving). SC2 still applies: 3 levels at most.
+    update: (step, refs, warn) => {
+      const st = step.set ?? {};
+      const out: Row = {};
+      if (st.name) out.name = st.name;
+      const k = SPIKE_MAP.serviceCategory.parent;
+      if (k && st.top_level) out[k] = 0;
+      else if (k && st.parent) out[k] = refs[st.parent]?.id;
+      if (!Object.keys(out).length) warn('service category update: nothing to set');
+      return out;
     },
     verifyCreate: (back, step, refs) => {
       const k = SPIKE_MAP.serviceCategory.parent;
@@ -2456,6 +2476,7 @@ export function refsOf(step: PlanStep): string[] {
     step.ticket_type,
     step.service_category,
     step.parent,
+    step.set?.parent,
     step.set?.ticket_type,
     step.set?.service_category,
     step.site,
