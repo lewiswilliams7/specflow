@@ -183,7 +183,12 @@ ${ctx.previous ? REVISE : ''}${extra}`;
         // for a live one (11 Nov: forcing that reuse put a text "Department" where a list was asked for).
         const kind = (d: string) => `${d.match(/^"[^"]*"\s+(\w+)/)?.[1] ?? ''}${/\[dynamic list\]/.test(d) ? ':dynamic' : ''}`;
         const want = `${s.type === 'dropdown' ? 'dropdown' : s.type}${s.dynamic ? ':dynamic' : ''}`;
-        const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!) && kind(String(d)) === want);
+        // A dropdown or multi-select is only a duplicate when the existing one has every option asked for: different
+        // options is a separate field (13 Nov: this check said "reuse it" for General Enquiry's own Enquiry category,
+        // and the fix pass went back to Benefits & Reward's list, rule M15).
+        const optionsOf = (d: string) => (d.match(/^"[^"]*"\s+[^:]+:\s*(.*)$/)?.[1] ?? '').replace(/\s+\(hint: .*\)\s*$/, '').split(' | ').map((o) => o.trim().toLowerCase());
+        const hasAll = (d: string) => !(s.type === 'dropdown' || s.type === 'multiselect') || (s.options ?? []).every((o) => optionsOf(d).includes(String(o).trim().toLowerCase()));
+        const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!) && kind(String(d)) === want && hasAll(String(d)));
         // F12: a dynamic field that replaces the old one on forms keeps the old one's label on purpose.
         const swapsIn = Boolean(s.dynamic) && plan.steps.some((x) => (x.set?.replace_fields ?? []).some((r) => r.new === s.id));
         if (hit && !swapsIn) errors.push(`${where}: field "${hit[0]}" already exists with the label "${s.label}": reuse it`);
