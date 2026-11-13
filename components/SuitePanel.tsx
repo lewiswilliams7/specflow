@@ -17,6 +17,7 @@ type Row = {
   assumptions?: number;
   steps?: Record<string, number>;
   planSeconds?: number;
+  autoSplit?: boolean;
   preview?: { ok: boolean; problems: string[]; outcomes: Record<string, number>; seconds: number };
   build?: { ok: boolean; problems: string[]; outcomes: Record<string, number>; errors: string[]; warnings: string[]; seconds: number };
   error?: string;
@@ -63,11 +64,18 @@ export function SuitePanel({ trial }: { trial: { id: string; name: string } | nu
 
     for (const [i, s] of chosen.entries()) {
       if (signal.aborted) break;
-      const request = tagBrief(s.brief, t);
-      const which = s.pasted ? { brief_text: s.brief } : { index: s.index };
+      let request = tagBrief(s.brief, t);
+      let which: { brief_text: string } | { index: number } = s.pasted ? { brief_text: s.brief } : { index: s.index };
       try {
         update(i, { status: 'planning' });
         const t0 = Date.now();
+        // M17: a long prose brief is split first, as in a customer's conversation.
+        if (!splitForms(request) && request.length >= 1500) {
+          update(i, { status: 'splitting' });
+          const sp = await post<{ marked?: string | null }>('/api/split', { message: request, instance_id: trial.id }, signal).catch(() => ({ marked: null }));
+          if (sp.marked && splitForms(sp.marked)) { request = sp.marked; which = { brief_text: sp.marked }; update(i, { autoSplit: true }); }
+          update(i, { status: 'planning' });
+        }
         const split = splitForms(request);
         let res: { plan: Record<string, unknown> | null; errors: string[] };
         if (split) {

@@ -175,8 +175,16 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
         }
       };
       try {
+        // M17: a long first brief written as prose is split into parts first, so it's planned like a marked brief.
+        let brief = text;
+        if (!threadId && !editOf && !splitForms(text) && text.length >= 1500) {
+          setPending((p) => (p ? { ...p, stage: 'planning', detail: 'finding the request types in your brief' } : p));
+          const r = await fetch('/api/split', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: text, instance_id: instanceId }), signal: ctrl.signal }).catch(() => null);
+          const marked = r?.ok ? ((await r.json().catch(() => ({}))) as { marked?: string | null }).marked : null;
+          if (marked && splitForms(marked)) brief = marked;
+        }
         // M14: a brief marked into forms is planned one form per request, in parallel, so none runs into the time limit.
-        const split = splitForms(text);
+        const split = splitForms(brief);
         let parts: unknown[] | undefined;
         if (split) {
           let planned = 0;
@@ -187,7 +195,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
             const r = await fetch('/api/plan-part', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ message: text, instance_id: instanceId, index, fix: fix ? { plan: fix.plan, errors: fix.errors, seal: fix.seal } : undefined }),
+              body: JSON.stringify({ message: brief, instance_id: instanceId, index, fix: fix ? { plan: fix.plan, errors: fix.errors, seal: fix.seal } : undefined }),
               signal: ctrl.signal,
             });
             const body = (await r.json().catch(() => ({}))) as PartResult;
@@ -226,7 +234,7 @@ export function Conversation({ instanceId, threadId, turns, placeholder, start, 
         const res = await fetch('/api/turns', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ message: text, instance_id: instanceId, thread_id: threadId, edit_of: editOf, parts }),
+          body: JSON.stringify({ message: brief, instance_id: instanceId, thread_id: threadId, edit_of: editOf, parts }),
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) {

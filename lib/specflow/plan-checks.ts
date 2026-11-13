@@ -71,7 +71,8 @@ function overlap(a: string, b: string): number {
 // About an approval STEP (approval process, approver, "approved by"), not a permission to approve something (13 Nov
 // run-through: "a role ... the right to approve purchase orders" blocked every form's approval in Northgate).
 const CONDITIONAL_APPROVAL = /\b(approval|approvals|approver|approvers|approved by|approves? (the|this|it|each|every|when|if|only)|needs? (approval|to be approved)|sign[- ]off)\b/i;
-const NOT_AN_APPROVAL_STEP = /\b(role|permission|permissions|right to approve|privilege)\b/i;
+// ...nor an email or notice about an approval (13 Nov run-through: "emailing the line manager when an approval is granted").
+const NOT_AN_APPROVAL_STEP = /\b(role|permission|permissions|right to approve|privilege|email|emails|emailing|notify|notifies|notification|notifications|send|sends|sending|remind|reminder|message|messages)\b/i;
 const CONDITION = /\b(only|if|when|unless|condition|conditional|depend|depends|based on|value|threshold|over|under|above|below)\b|[£$€]\s?\d/i;
 const EVERY_TICKET_APPROVED = /\b(every|all)\s+(\S+\s+){0,4}tickets?\b[^.]*\bapprov/i;
 
@@ -253,7 +254,9 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     const tpl = steps.find((x) => x.id === tplRef);
     const tplName = String(tpl?.name ?? tpl?.match?.name ?? '');
     const actionName = String(s.name ?? s.match?.name ?? '');
-    if (tpl && /clos|resolv|complet|done/i.test(tplName) && !CLOSING_ACTION.test(actionName))
+    // A "ticket closed / resolved" email, not one that says some piece of work is complete (13 Nov run-through: "IT
+    // provisioning complete" on "Accounts Created" was right).
+    if (tpl && /\bclos(ed|ure|ing)?\b|\bresolv(ed|ution)?\b|\b(ticket|request|change|incident|case|job)\b.*\b(complete|completed|done|finished)\b/i.test(tplName) && !CLOSING_ACTION.test(actionName))
       errors.push(`step "${s.id}": "${actionName}" doesn't close tickets, so it can't send "${tplName}". Use the action that closes or resolves the ticket on this workflow, or a new one`);
   }
 
