@@ -251,7 +251,13 @@ export const SPIKE_MAP = {
    *  own Incident rows) but no write has proven it yet. */
   formRow: { hintOverride: 'override_hint' as string | null, labelOverride: null as string | null },
   /** Service categories (round 36): category 26 { name, parent_id: 8 } kept. parent_id 0 = top level. */
-  serviceCategory: { parent: 'parent_id' as string | null },
+  serviceCategory: {
+    parent: 'parent_id' as string | null,
+    /** Round 40: every Halo category carries one restriction group with one criterion type "X" (data_id 0, allow) = User
+     *  Access "Everyone"; categories Enact made had none. Round 41: category 26 kept it. A service shows its category's
+     *  group (service 170 read back category 8's), so access is set on the category (rule SC3). */
+    access: 'group_user_access' as string | null,
+  },
   service: {
     /** Round 36: service 170 kept a service_request_details row for ticket type 65 (shape from Halo's own services 122 and 71). */
     requestDetails: 'service_request_details' as string | null,
@@ -396,7 +402,7 @@ export const FEATURES: Feature[] = [
     key: 'services',
     name: 'services in the service catalogue',
     sections: ['service', 'serviceCategory', 'builderProof'],
-    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { name? (rename), summary?, ticket_type?, service_category?, show_on_portal? }. A service category can be renamed or moved: service_category update set: { name?, parent?: ref of another service_category, top_level?: true }. Order moves so no category is ever four levels deep, and never move a category under itself or its own child (move the child out first). Halo allows at most THREE levels of service categories (SC2, e.g. HR > Recruitment > Onboarding): a deeper path goes in its third level, and say so in assumptions. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
+    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { name? (rename), summary?, ticket_type?, service_category?, show_on_portal? }. A service category can be renamed, moved or opened to everyone: service_category update set: { name?, parent?: ref of another service_category, top_level?: true, everyone?: true (User Access "Everyone") }. New categories are always open to everyone. A service's User Access comes from its category, so set it on the category. Order moves so no category is ever four levels deep, and never move a category under itself or its own child (move the child out first). Halo allows at most THREE levels of service categories (SC2, e.g. HR > Recruitment > Onboarding): a deeper path goes in its third level, and say so in assumptions. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
   },
   {
     key: 'imports',
@@ -652,6 +658,12 @@ function checkRemoved(back: unknown, removed: string[] | undefined, refs: Refs |
 function requestRow(ticketTypeId: unknown): Row {
   return { servicedetail_type: 0, servicedetail_requesttypeid: ticketTypeId, servicedetail_label: 'Request this Service', servicedetail_shownewreqscreen: true, icon: 'plus-circle', sequenceid: 10, allow_all_items: true };
 }
+
+/** User Access "Everyone" on a service category: Halo's own shape (categories 8 and 26), without ids (SC3). */
+function everyoneAccess(): Row[] {
+  return [{ type: 4, desc: 'Restriction Group 1', seq: 1, allow_access: true, user_access: [{ type: 'X', data_id: 0, data_name: '', allow_access: true, data_string: '' }] }];
+}
+const hasEveryone = (rows: unknown) => ((rows as Row[]) ?? []).some((g) => g.allow_access !== false && ((g.user_access as Row[]) ?? []).some((u) => u.type === 'X' && u.allow_access !== false));
 
 function keepRows(rows: unknown): Row[] {
   return ((rows as Row[]) ?? []).map((r) => {
@@ -1054,6 +1066,8 @@ export interface PlanStep {
     attachments?: { allow?: boolean; min?: number };
     /** service_category: move under another category (a service_category ref), or top_level: true (SC1, round 39). */
     top_level?: boolean;
+    /** service_category: User Access "Everyone" (SC3). */
+    everyone?: boolean;
     parent?: string;
     /** ticket_type / field_group: take these fields off the form (the fields stay in Halo). */
     remove_fields?: string[];
@@ -1788,17 +1802,23 @@ export const translators: Record<PlanStep['object'], Translator> = {
     build: (step, refs, warn) => {
       const p: Row = { name: step.name };
       set(p, SPIKE_MAP.serviceCategory.parent, step.parent ? refs[step.parent]?.id : 0, 'service category parent', warn);
+      // SC3: a new category is open to everyone, like Halo's own (added after create, as round 41 proved it).
+      const a = SPIKE_MAP.serviceCategory.access;
+      if (a) p._enact_after = { [a]: everyoneAccess() };
       return p;
     },
+    afterCreate: (id, sent) => (sent._enact_after ? { id, ...(sent._enact_after as Row) } : null),
     // Round 38: category 26 kept a rename. Moving to another parent isn't proven (round 39), so only the name changes.
     // Round 38: rename kept; round 39: parent_id 0 and back to 8 kept (moving). SC2 still applies: 3 levels at most.
-    update: (step, refs, warn) => {
+    update: (step, refs, warn, current) => {
       const st = step.set ?? {};
       const out: Row = {};
       if (st.name) out.name = st.name;
       const k = SPIKE_MAP.serviceCategory.parent;
       if (k && st.top_level) out[k] = 0;
       else if (k && st.parent) out[k] = refs[st.parent]?.id;
+      const a = SPIKE_MAP.serviceCategory.access;
+      if (a && st.everyone && !hasEveryone(current?.[a])) out[a] = everyoneAccess();
       if (!Object.keys(out).length) warn('service category update: nothing to set');
       return out;
     },
