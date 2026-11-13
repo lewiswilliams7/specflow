@@ -202,7 +202,7 @@ export function BuildPanel({ planId, instanceId, instanceName, baseUrl, titles, 
               <li key={e.step} className={e.warnings.length ? 'problem' : cls}>
                 <span className="sign">{e.warnings.length ? '!' : sign}</span>
                 <div className="what">
-                  <b>{titles[e.step] ?? e.name}</b> <span className="kind">{KIND[e.object] ?? e.object}, {e.detail === 'nothing to change' ? 'no change needed' : WORD[e.outcome] ?? e.outcome}</span>
+                  <b>{titles[e.step] ?? e.name}</b> <span className="kind">{KIND[e.object] ?? e.object}, {e.detail === 'nothing to change' ? 'already done, left as it is' : WORD[e.outcome] ?? e.outcome}</span>
                   {e.detail && e.detail !== 'nothing to change' ? <small className="mono">{e.detail}</small> : null}
                   {e.error ? <p className="err">{haloError(e.error)}</p> : null}
                   {e.warnings.map((w) => <p key={w} className="err">{w}</p>)}

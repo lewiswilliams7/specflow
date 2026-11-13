@@ -196,6 +196,12 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         // send (U2): compare without them, or a re-run re-sends the whole form and Halo rewrites every row (run 3).
         const plain = (v: unknown) => JSON.stringify(Array.isArray(v) ? v.map((r) => (r && typeof r === 'object' ? (({ group: _g, fieldinfo: _f, ...rest }) => rest)(r as Record<string, unknown>) : r)) : v);
         for (const k of Object.keys(changes)) if (plain(changes[k]) === plain(current[k])) delete changes[k];
+        // B3: an update asking for something that's already so (a category already open to everyone, an option already
+        // there) is "no change needed", never a problem that blocks the build (13 Nov: three Compleat categories). An
+        // update that asks for nothing at all is still caught by the plan checks.
+        if (!Object.keys(changes).length && Object.keys(step.set ?? {}).length) {
+          for (let w = warnings.length - 1; w >= 0; w--) if (/nothing to (set|change)/i.test(warnings[w])) warnings.splice(w, 1);
+        }
         refs[step.id] = { id: target.id as number, name: nameOf(target, t.nameKey), row: current };
         const describe = (c: Record<string, unknown>) =>
           Object.entries(c).map(([k, v]) => (Array.isArray(v) ? `${k}: ${v.length} rows (was ${Array.isArray(current[k]) ? (current[k] as unknown[]).length : 0})` : `${k}: ${JSON.stringify(current[k])} → ${JSON.stringify(v)}`)).join('; ');
