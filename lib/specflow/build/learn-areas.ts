@@ -43,6 +43,10 @@
  * A fresh zz form, then: a request type added to a service's Service Request Details, read-only (4) by the builder,
  * a service subcategory created under an existing category, and the per-form hint and label overrides (Lewis, 13 Nov).
  *
+ * Round 37 (13 Nov): Compleat's "New Starter" service kept a new category but not its summary or service_tickettype_id,
+ * twice (with and without Service Request Details in the same save). Does a zz service that has request details keep them?
+ * And how does Halo's own record show summary vs the portal text?
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -53,7 +57,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 36;
+export const ROUND = 37;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -250,77 +254,20 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('fresh form', async () => {
-    await prove('a fresh zz form with a locked field', { request: 'Enact learning run 36', steps: [
-      { id: 'c', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR31Choice' } },
-      { id: 'f', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR33Locked' } },
-      { id: 'form', object: 'ticket_type', action: 'create', name: 'zz Enact r36 form', fields: [{ ref: 'c' }, { ref: 'f' }] },
-      { id: 'lock', object: 'ticket_type', action: 'update', match: { name: 'zz Enact r36 form' }, set: { read_only: ['f'] } },
-    ] } as unknown as Plan);
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
-    const fid = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR33Locked')?.id);
-    const row = tt ? (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === fid) : null;
-    note('fresh form', 'locked row', row ? pick(row, /^(endusernew|technew|enduserdetail|techdetail)$/) : null);
-  });
 
-  // Lewis (13 Nov): each form row has "Override Field Hint" and "Override display label" in Halo's screen. Round 35 saw no such
-  // key on a row, likely because Halo leaves empty settings out. So: find any form where one is set, then try names on a zz row.
-  const BASE_ROW = /^(copytochildonupdate|id|rtid|usage|fieldid|seq|tableid|groupid|endusernew|enduserdetail|supplierdetail|technew|techdetail|fieldinfo|technewlocation|restrictupdate|techtab_id|techtab_name|copytochild|copytorelated|restrictread|techaction|enduseraction|endusercheckboxmandatory|group)$/;
-  await area('row overrides', async () => {
-    const A = 'row overrides';
-    const extra: Record<string, unknown> = {};
-    for (const t of (await list('TicketType')).rows.filter(own)) {
-      for (const r of ((await detail('TicketType', t.id))?.fields as Row[]) ?? []) {
-        for (const [k, v] of Object.entries(r)) if (!BASE_ROW.test(k) && !(k in extra)) extra[k] = { form: nameOf(t), fieldid: r.fieldid, value: short(v) };
-      }
-    }
-    note(A, 'row keys beyond the usual set, across Halo forms', extra);
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
-    const fid = Number((await list('FieldInfo')).rows.find((f) => f.name === 'CFzzEnactR31Choice')?.id);
-    if (!apply || !tt || !fid) { note(A, 'skipped', { form: !!tt, field: !!fid }); return; }
-    const rows = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).map(({ group: _g, fieldinfo: _f, ...rest }) => rest as Row);
-    const row = rows.find((r) => Number(r.fieldid) === fid);
-    if (!row) { note(A, 'skipped', 'choice field not on the r36 form'); return; }
-    // Each candidate gets its own name as the value, so the read-back shows exactly which key Halo kept.
-    const cands = ['hint', 'fieldhint', 'field_hint', 'hint_override', 'override_hint', 'overridehint', 'hintoverride', 'fieldhint_override', 'hintoverride_text',
-      'label', 'fieldlabel', 'field_label', 'label_override', 'override_label', 'overridelabel', 'labeloverride', 'display_label', 'displaylabel', 'overridedisplaylabel', 'override_display_label'];
-    for (const c of cands) row[c] = `zz r36 ${c}`;
-    try {
-      await runtime().halo.post('/TicketType', [{ id: Number(tt.id), fields: rows }]);
-      const back = (((await detail('TicketType', tt.id))?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === fid);
-      const kept = Object.fromEntries(Object.entries(back ?? {}).filter(([, v]) => typeof v === 'string' && v.startsWith('zz r36 ')));
-      note(A, 'candidate keys Halo kept', kept);
-      note(A, 'row read back (keys beyond the usual set)', Object.fromEntries(Object.entries(back ?? {}).filter(([k]) => !BASE_ROW.test(k))));
-      summary.push(`· form row overrides: ${Object.keys(kept).length ? `kept ${Object.keys(kept).join(', ')}. Open zz Enact r36 form in Halo and check which box shows which text` : 'no candidate kept'}`);
-    } catch (e) { note(A, 'error', err(e)); }
-  });
-
-  await area('service request details', async () => {
-    const A = 'service request details';
-    const zz = (await list('Service')).rows.find((r) => nameOf(r) === 'zz Enact r30 service');
-    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r36 form');
-    if (!zz || !tt) { note(A, 'skipped', { service: !!zz, form: !!tt }); return; }
-    note(A, 'before', pick(await detail('Service', zz.id), /^(requestdetails_count|service_request_details)$/));
-    await update(A, 'add zz r36 form', 'Service', Number(zz.id), { service_request_details: [{ servicedetail_type: 0, servicedetail_requesttypeid: Number(tt.id), servicedetail_label: 'Request this Service', servicedetail_shownewreqscreen: true, icon: 'plus-circle', sequenceid: 10, allow_all_items: true }] });
-    const after = (await detail('Service', zz.id))?.service_request_details as Row[] | undefined;
-    note(A, 'after', (after ?? []).map((r) => pick(r, /^(id|servicedetail_type|servicedetail_requesttypeid|servicedetail_requesttypename|servicedetail_label|servicedetail_shownewreqscreen|sequenceid)$/)));
-    const ok = (after ?? []).some((r) => Number(r.servicedetail_requesttypeid) === Number(tt.id));
-    summary.push(`· service request details: ${ok ? 'kept. On the Concord portal, open "zz Enact r30 service" and check "Request this Service" opens zz Enact r36 form' : 'not kept'}`);
-  });
-
-  await area('service subcategory', async () => {
-    const A = 'service subcategory';
-    const cats = (await list('ServiceCategory')).rows;
-    const parent = cats.find(own);
-    const d = parent ? await detail('ServiceCategory', parent.id) : null;
-    note(A, 'a category, every setting', settings(d));
-    note(A, 'parent-like keys across categories', cats.slice(0, 15).map((c) => pick(c, /^(id|name|parent|parent_id|parentid|level|sequence|toplevel|group)/i)));
-    if (!parent) return;
-    const pk = Object.keys(d ?? {}).find((k) => /^parent(_?id)?$/i.test(k)) ?? Object.keys(cats[0] ?? {}).find((k) => /^parent(_?id)?$/i.test(k));
-    note(A, 'parent key', pk ?? 'none found');
-    if (!pk) return;
-    const id = await create(A, 'subcategory', 'ServiceCategory', { name: 'zz Enact r36 subcategory', [pk]: Number(parent.id) });
-    if (id) note(A, 'subcategory read back', pick(await detail('ServiceCategory', id), new RegExp(`^(id|name|${pk}|level)$`)));
+  await area('service summary', async () => {
+    const A = 'service summary';
+    const all = (await list('Service')).rows;
+    const zz = all.find((r) => nameOf(r) === 'zz Enact r30 service');
+    // Halo's own services: every key that looks like the portal text or the ticket type, to compare with what we send.
+    for (const s of all.filter(own).slice(0, 3)) note(A, `Halo own: ${s.id} ${nameOf(s)}`, pick(await detail('Service', s.id), /summary|desc|note|tickettype|request|portal|catalog|displayname|template/i));
+    if (!zz) { note(A, 'skipped', 'zz Enact r30 service missing'); return; }
+    note(A, 'zz before', pick(await detail('Service', zz.id), /summary|desc|note|tickettype|requestdetails_count/i));
+    const tt = (await list('TicketType')).rows.find((t) => nameOf(t) === 'zz Enact r30 type' || nameOf(t) === 'zz Enact r36 form');
+    await update(A, 'summary alone', 'Service', Number(zz.id), { summary: 'zz Enact r37 summary alone' });
+    if (tt) await update(A, 'ticket type alone', 'Service', Number(zz.id), { service_tickettype_id: Number(tt.id) });
+    await update(A, 'summary and category together', 'Service', Number(zz.id), { summary: 'zz Enact r37 summary with category', service_category_id: Number((await detail('Service', zz.id))?.service_category_id ?? 0) });
+    note(A, 'zz after', pick(await detail('Service', zz.id), /summary|desc|note|tickettype|requestdetails_count/i));
   });
 
   return { out, summary };
