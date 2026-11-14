@@ -11,6 +11,7 @@ import { formRequest, splitForms } from './forms';
 import { complete, parseJsonReply } from './llm';
 import { mandatoryEverywhere, planChecks } from './plan-checks';
 import { type Plan, type PlanStep, notReadyFeatureNames, readyFeaturePrompt, refsOf } from './plan-types';
+import { applyWrittenHints, coverageErrors } from './coverage';
 
 const PLAN_OBJECTS = ['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification', 'service', 'service_category', 'user', 'site', 'organisation', 'working_hours', 'holiday', 'canned_text', 'lookup_value', 'kb_article', 'faq_list', 'role', 'asset_type', 'asset_group'];
 
@@ -271,6 +272,12 @@ ${ctx.previous ? REVISE : ''}${extra}`;
       alwaysMandatory,
       previousSteps: ctx.previous?.steps,
     }));
+    // M24: everything the brief writes out for a form must be in the plan (fields, show rules).
+    const cfd = (inventory.details?.custom_fields ?? {}) as Record<string, string>;
+    // The inventory lists a form's fields by Halo name (with a mark when mandatory): turn them into labels.
+    const labelOfName = (n: string) => { const key = n.replace(/[\s*].*$/, ''); return cfd[key]?.match(/^"([^"]*)"/)?.[1] ?? key; };
+    const formFields = Object.fromEntries(Object.entries((inventory.details?.ticket_types ?? {}) as Record<string, { fields?: string[]; groups?: Record<string, string[]> }>).map(([n, t]) => [n, [...(t.fields ?? []), ...Object.values(t.groups ?? {}).flat()].map((x) => labelOfName(String(x)))]));
+    errors.push(...coverageErrors(plan, request, cfd, formFields));
     return errors;
   }
   return { SYSTEM, userMsg, validate };
@@ -488,6 +495,8 @@ export function mergePlans(parts: { title: string; plan: Plan }[], request: stri
  * "Hiring Manager decision" came out optional, and others flipped between parts).
  */
 export function applyWrittenRequirement(plan: Plan, request: string, inventory: Inventory) {
+  // M24: each form shows the brief's own help text for every field (F14), whatever the planner wrote.
+  applyWrittenHints(plan, request, ((inventory as unknown as { details?: { custom_fields?: Record<string, string> } }).details?.custom_fields ?? {}));
   // One block per form: the "=== FORM ===" parts, or the whole request when it has none.
   const blocks = splitForms(request, 1)?.forms.map((f) => f.text) ?? [request];
   const byType = new Map<string, Map<string, boolean>>();
@@ -657,6 +666,38 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     const words = new Set(String(st.name ?? '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3));
     const ranked = fits.sort((a, b) => Number(/^zz/i.test(a)) - Number(/^zz/i.test(b)) || [...b.toLowerCase().split(/[^a-z]+/)].filter((w) => words.has(w)).length - [...a.toLowerCase().split(/[^a-z]+/)].filter((w) => words.has(w)).length);
     if (ranked[0]) { st.based_on = ranked[0]; plan.assumptions = [...(plan.assumptions ?? []), `"${st.name}" is copied from the existing SLA "${ranked[0]}", which has every priority it sets.`]; }
+  }
+
+  // M25 (14 Nov): names the planner nearly got right: a stage, button or ticket type that doesn't exist is changed to the
+  // one existing name that's clearly the same thing ("Approval Process Approved" for "Approved"). Only one close
+  // match counts; otherwise the check still reports it.
+  const closest = (want: string, names: string[]) => {
+    const bi = (t: string) => { const x = t.toLowerCase().replace(/[^a-z0-9]/g, ''); return new Set([...x].map((_, i) => x.slice(i, i + 2)).filter((g) => g.length === 2)); };
+    const a = bi(want);
+    const score = (n: string) => { const b = bi(n); const both = [...a].filter((g) => b.has(g)).length; return a.size + b.size ? (2 * both) / (a.size + b.size) : 0; };
+    const ranked = names.map((n) => ({ n, s: score(n) })).sort((x, y) => y.s - x.s);
+    return ranked[0] && ranked[0].s >= 0.75 && (!ranked[1] || ranked[0].s - ranked[1].s >= 0.1) ? ranked[0].n : null;
+  };
+  const wfSteps = (inventory.workflows_and_their_steps ?? {}) as Record<string, string[]>;
+  for (const st of steps) {
+    const base = st.copy_of ?? (st.object === 'workflow' && st.action === 'update' ? st.match?.name : undefined);
+    const stages = base ? [...(wfSteps[Object.keys(wfSteps).find((w) => w.toLowerCase() === base.toLowerCase()) ?? ''] ?? [])] : [];
+    if (!stages.length) continue;
+    const ins = [...(st.insert_steps ?? []), ...(st.set?.insert_steps ?? []), ...(st.insert_step ? [st.insert_step] : [])];
+    const known = () => [...stages, ...ins.map((i) => i.name)];
+    for (const i of ins) {
+      const has = (n: string) => known().some((k) => k.toLowerCase() === n.toLowerCase());
+      if (!has(i.after_step)) { const c = closest(i.after_step, known()); if (c) i.after_step = c; }
+      for (const e of i.exits ?? []) if (!has(e.to_step)) { const c = closest(e.to_step, known()); if (c) e.to_step = c; }
+    }
+  }
+  for (const st of steps) {
+    if (st.action !== 'reuse' && st.action !== 'update') continue;
+    const list = st.object === 'outcome' ? inventory.actions : st.object === 'ticket_type' ? inventory.ticket_types : st.object === 'status' ? inventory.statuses : null;
+    const n = String(st.match?.name ?? '');
+    if (!list || !n || list.some((x) => String(x).toLowerCase() === n.toLowerCase()) || steps.some((x) => x.action === 'create' && x.object === st.object && String(x.name ?? '').toLowerCase() === n.toLowerCase())) continue;
+    const c = closest(n, list.map(String));
+    if (c) { st.match = { name: c }; plan.assumptions = [...(plan.assumptions ?? []), `"${n}" is taken to mean the existing ${st.object.replace(/_/g, ' ')} "${c}".`]; }
   }
 
   // New stages listed before the stage they follow ("Facilities" after "IT Provisioning", listed first) are put in order.
