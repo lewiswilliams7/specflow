@@ -707,16 +707,29 @@ function formLabels(current: Row): string[] {
   return out;
 }
 
-function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: boolean }[] = [], mand: { ref: string; mandatory: boolean }[] = [], shape: Row, warn: (m: string) => void, labelsOnForm: string[] = [], names: Map<number, string> = new Map()): Row[] {
+/** The sections on a form, each with the field rows inside it (from the detail read). */
+function formSections(current: Row): { name: string; fields: Row[] }[] {
+  return ((current.fields as Row[]) ?? []).filter((r) => (r.group as Row)?.fields).map((r) => ({ name: String((r.group as Row)?.name ?? 'a section'), fields: ((r.group as Row).fields as Row[]) ?? [] }));
+}
+
+function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: boolean }[] = [], mand: { ref: string; mandatory: boolean }[] = [], shape: Row, warn: (m: string) => void, labelsOnForm: string[] = [], names: Map<number, string> = new Map(), sections: { name: string; fields: Row[] }[] = []): Row[] {
   // Rule F9 (2026-10-23): FProjectStartDate looked up by name was id -19, but the one on Change Scheduling is -105.
   // Match a field to a form row by id OR by the row's own field name.
   const sameField = (r: Row, ref: string) =>
     Number(r.fieldid) === Number(refs[ref]?.id) || (!!refs[ref]?.name && names.get(Number(r.id)) === String(refs[ref]?.name).toLowerCase());
+  const inSection = (ref: string) => sections.find((x) => x.fields.some((r) => Number(r.fieldid) === Number(refs[ref]?.id) || (!!refs[ref]?.name && String((r.fieldinfo as Row)?.name ?? '').toLowerCase() === String(refs[ref]?.name).toLowerCase())));
   const m = SPIKE_MAP.ticketType;
   const level = (b?: boolean) => (b ? m.mandatoryValue : m.optionalValue);
   for (const c of mand) {
     const row = rows.find((r) => sameField(r, c.ref));
-    if (!row) { warn(`field_mandatory: ${c.ref} isn't on this form; add it with add_fields`); continue; }
+    if (!row) {
+      // F8b (15 Nov): the field is on the form inside a section, so the ticket type has no row for it. Saying "add it"
+      // contradicted F8 ("already on the form") and the fix pass went round in circles. Say where it really is.
+      const sec = inSection(c.ref);
+      if (sec) warn(`field_mandatory: "${refs[c.ref]?.row?.label ?? refs[c.ref]?.name ?? c.ref}" is inside the section "${sec.name}" on this form, not a loose field. Don't add it again: make it mandatory with a field_group update (match "${sec.name}", set.field_mandatory), which changes that section on every form using it, or drop this mandatory change.`);
+      else warn(`field_mandatory: ${c.ref} isn't on this form; add it with add_fields`);
+      continue;
+    }
     for (const k of m.mandatoryKeys ?? []) row[k] = level(c.mandatory);
   }
   let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
@@ -726,10 +739,17 @@ function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: 
     const raw = refs[f.ref]?.id;
     const id = typeof raw === 'string' && raw.startsWith('<new') ? raw : Number(raw);
     if (rows.some((r) => sameField(r, f.ref))) continue; // already there (e.g. a re-run): nothing to do
+    if (inSection(f.ref)) continue; // F8b: this very field is already on the form, inside a section: nothing to add
     // Rule F8 (2026-10-23): "Start date" added to a form that already had "Starting Date" in a section.
     const label = String(refs[f.ref]?.row?.label ?? '');
     const twin = label ? labelsOnForm.find((l) => sameMeaning(l, label)) : undefined;
-    if (twin) { warn(`add_fields: "${label}" NOT added: the form already has "${twin}" (rule F8). Make that one mandatory instead.`); continue; }
+    if (twin) {
+      const sec = sections.find((x) => x.fields.some((r) => String((r.fieldinfo as Row)?.label ?? '') === twin));
+      warn(sec
+        ? `add_fields: "${label}" NOT added: the form already has "${twin}" inside the section "${sec.name}" (rule F8). Drop "${label}" from this form; to make "${twin}" required, use a field_group update on "${sec.name}" (set.field_mandatory), not the ticket type.`
+        : `add_fields: "${label}" NOT added: the form already has "${twin}" (rule F8). Make that one mandatory instead.`);
+      continue;
+    }
     const row: Row = { ...shape, fieldid: id, seq: ++seq };
     for (const k of m.mandatoryKeys ?? []) row[k] = level(f.mandatory);
     rows.push(row);
@@ -1615,7 +1635,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const rows = keepRows(current[m.fields as string]);
         if (st.replace_fields?.length) replaceRows(rows, st.replace_fields, refs, warn);
         const shape: Row = { usage: 0, groupid: 0, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 };
-        editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn, formLabels(current), rowNames(current));
+        editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn, formLabels(current), rowNames(current), formSections(current));
         // Rule F14: this form's own help text for a shared field (Override Field Hint on the row).
         for (const h of [...(st.add_fields ?? []).filter((f) => f.hint !== undefined), ...(st.field_hints ?? [])]) {
           const hk = SPIKE_MAP.formRow.hintOverride;
@@ -2122,7 +2142,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (!st.add_fields?.length && !st.field_mandatory?.length && !st.replace_fields?.length) { warn('update: nothing to set'); return {}; }
       const rows = keepRows(current.fields);
       if (st.replace_fields?.length) replaceRows(rows, st.replace_fields, refs, warn);
-      editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn, formLabels(current), rowNames(current));
+      editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn, formLabels(current), rowNames(current), formSections(current));
       return { fields: rows };
     },
     verifyUpdate: (back, changes, step, refs) => [...checkFieldRows(back.fields, changes.fields, 'field group'), ...checkReplaced(back.fields, step?.set?.replace_fields, refs, 'field group')],
