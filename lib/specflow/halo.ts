@@ -102,6 +102,16 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
     return cached.token;
   }
 
+  // Rule R2 (15 Nov): once Halo has refused a request for being too busy (429), space every later call out so a long
+  // build stays under its rate limit instead of hitting it again and again.
+  let gap = 0;
+  let last = 0;
+  async function pace() {
+    const wait = last + gap - Date.now();
+    if (wait > 0) await sleep(wait);
+    last = Date.now();
+  }
+
   async function get<T = unknown>(path: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(`${conn.baseUrl}/api${path.startsWith('/') ? path : `/${path}`}`);
     for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
@@ -110,6 +120,7 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
     for (let attempt = 1; ; attempt++) {
       // Signing in sits outside the retry: a rejected secret fails at once instead of looking like a busy Halo.
       const bearer = await token();
+      await pace();
       let res: Response | null = null;
       try {
         res = await fetch(url, {
@@ -127,6 +138,7 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
       if (res.status === 401) throw new HaloAuthError('Halo stopped accepting the saved client ID or secret (401). Update the connection with the current ones.');
       // 13 Nov run-through: a busy trial still answered 429 after 4 tries (about 30s). Six tries with longer waits
       // (up to about 2 minutes in all) ride out Halo's rate limit.
+      if (res.status === 429) gap = Math.min(1500, Math.max(400, gap * 2));
       if (RETRY.has(res.status) && attempt < 6) {
         const after = Number(res.headers.get('retry-after'));
         await sleep(Number.isFinite(after) && after > 0 ? Math.min(after, 45) * 1000 : Math.min(30_000, 1500 * 2 ** attempt));
@@ -139,6 +151,7 @@ export function haloClient(conn: HaloConnection): HaloReader & { post: <T = unkn
   async function post<T = unknown>(path: string, body: unknown): Promise<T> {
     const url = new URL(`${conn.baseUrl}/api${path.startsWith('/') ? path : `/${path}`}`);
     // Writes are never retried: a timed-out POST may still have saved, and re-running the build is the safe retry (U4).
+    await pace();
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${await token()}`, Accept: 'application/json', 'Content-Type': 'application/json' },

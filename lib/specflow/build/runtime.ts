@@ -30,7 +30,37 @@ type Runtime = { halo: HaloIO; templates: TemplateStore; lists: Map<string, Row[
 const store = new AsyncLocalStorage<Runtime>();
 
 export function withRuntime<T>(rt: { halo: HaloIO; templates: TemplateStore }, fn: () => Promise<T>): Promise<T> {
-  return store.run({ ...rt, lists: new Map() }, fn);
+  return store.run({ ...rt, halo: cachedReads(rt.halo), lists: new Map() }, fn);
+}
+
+/**
+ * Rule R2 (15 Nov): a big plan re-read the same lists for every step (117 changes on a demo instance: /Service and
+ * /TicketType again and again) and Halo's rate limit refused the check before writing (429 on GET /CAB). Within one
+ * build, a read is answered from memory until the build writes anything; any write forgets every read, so read-backs
+ * and checks after a write always see Halo's latest. A dry run never writes, so it reads each record once.
+ */
+export function cachedReads(halo: HaloIO): HaloIO {
+  const cache = new Map<string, Promise<unknown>>();
+  return {
+    get<T = unknown>(path: string, params?: Record<string, string>): Promise<T> {
+      const key = `${path}?${new URLSearchParams(Object.entries(params ?? {}).sort()).toString()}`;
+      let hit = cache.get(key);
+      if (!hit) {
+        hit = halo.get(path, params);
+        cache.set(key, hit);
+        hit.catch(() => cache.delete(key));
+      }
+      return hit.then((v) => structuredClone(v) as T);
+    },
+    async post<T = unknown>(path: string, body: unknown): Promise<T> {
+      cache.clear();
+      try {
+        return await halo.post<T>(path, body);
+      } finally {
+        cache.clear();
+      }
+    },
+  };
 }
 
 export function runtime(): Runtime {
