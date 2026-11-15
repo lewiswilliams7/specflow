@@ -711,6 +711,17 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
         done.push(...left.splice(k < 0 ? 0 : k, 1));
       }
       list.splice(0, list.length, ...done);
+      // M26 (15 Nov): a chain written forwards (A after Fulfilment, B after A, each with a button on to the next) points
+      // every exit at a stage not inserted yet. Halo inserts work the other way: hang each one after the same existing
+      // stage, last first, so every exit points at a stage already there (the shape the fix pass found by hand on the
+      // Vida Bank plan). Only a clean chain is turned round.
+      const chain = done.length >= 2 && done.every((x, k) => k === 0 || x.after_step.toLowerCase() === done[k - 1].name.toLowerCase());
+      const forward = chain && done.slice(0, -1).some((x, k) => (x.exits ?? []).some((e) => e.to_step.toLowerCase() === done[k + 1].name.toLowerCase()));
+      if (forward) {
+        const anchor = done[0].after_step;
+        const turned = [...done].reverse().map((x) => ({ ...x, after_step: anchor }));
+        list.splice(0, list.length, ...turned);
+      }
     }
   }
 
@@ -729,15 +740,36 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     plan.assumptions = [...(plan.assumptions ?? []), `"${tt.name}" keeps the workflow of "${tt.based_on}" ("${wf}"), which it's copied from.`];
   }
 
+  // M27 (15 Nov): a top-level service category the brief asks to create but the instance already has is reused, not
+  // made twice ("Business services" on the Vida Bank demo instance).
+  const topCats = ((inventory as unknown as { service_categories?: string[] }).service_categories ?? []).map(String).filter((p) => !p.includes(' > '));
+  for (const [i, st] of steps.entries()) {
+    if (st.object !== 'service_category' || st.action !== 'create' || (st as { parent?: string }).parent) continue;
+    const have = topCats.find((p) => p.toLowerCase() === String(st.name ?? '').trim().toLowerCase());
+    if (!have) continue;
+    steps[i] = { id: st.id, object: 'service_category', action: 'reuse', match: { name: have } } as PlanStep;
+    plan.assumptions = [...(plan.assumptions ?? []), `The service category "${have}" already exists, so it's reused.`];
+  }
+
   const ids = new Set(steps.map((x) => x.id));
   const lists: [PlanStep['object'], string[]][] = [
     ['ticket_type', inventory.ticket_types], ['workflow', Object.keys(inventory.workflows_and_their_steps ?? {})], ['outcome', inventory.actions],
     ['team', inventory.teams], ['sla', inventory.slas], ['approval_process', inventory.approval_processes], ['approval_group', inventory.approval_groups], ['status', inventory.statuses],
+    ['asset_group', (inventory as unknown as { asset_groups?: string[] }).asset_groups ?? []],
   ];
+  // M27: the property a name sits in says which kind of record it is ("Service Request" as a service's ticket_type is
+  // the ticket type, even when a workflow or team has the same name).
+  const KEY_KIND: Record<string, PlanStep['object']> = { ticket_type: 'ticket_type', asset_group: 'asset_group', workflow: 'workflow', sla: 'sla', team: 'team', approval: 'approval_process', new_status: 'status' };
+  const wantKind = (st: PlanStep, r: string) => {
+    for (const src of [st as unknown as Record<string, unknown>, (st.set ?? {}) as unknown as Record<string, unknown>]) for (const [k, kind] of Object.entries(KEY_KIND)) if (src[k] === r) return kind;
+    return undefined;
+  };
   for (const st of [...steps]) {
     for (const r of refsOf(st)) {
       if (!r || ids.has(r)) continue;
-      const found = lists.filter(([, names]) => (names ?? []).some((n) => String(n).toLowerCase() === r.toLowerCase()));
+      let found = lists.filter(([, names]) => (names ?? []).some((n) => String(n).toLowerCase() === r.toLowerCase()));
+      const kind = wantKind(st, r);
+      if (found.length > 1 && kind) found = found.filter(([k]) => k === kind);
       if (found.length !== 1) continue;
       const exact = (found[0][1] ?? []).find((n) => String(n).toLowerCase() === r.toLowerCase())!;
       steps.unshift({ id: r, object: found[0][0], action: 'reuse', match: { name: String(exact) } } as PlanStep);
