@@ -360,7 +360,7 @@ function dropRepeatedQuestions(plan: Plan) {
 }
 
 export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
-export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high'; /** Epoch ms the request must finish by: a fix pass that can't finish in time is skipped, so the user gets the plan and its problems instead of a timeout (13 Nov run-through: 504s). */ deadline?: number; /** Plan once with no second full pass: the caller runs its own, cheaper fix (a patch). 13 Nov: a failing form part paid for two full plans and then a fix. */ once?: boolean };
+export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high'; /** Epoch ms the request must finish by: a fix pass that can't finish in time is skipped, so the user gets the plan and its problems instead of a timeout (13 Nov run-through: 504s). */ deadline?: number; /** Plan once with no second full pass: the caller runs its own, cheaper fix (a patch). 13 Nov: a failing form part paid for two full plans and then a fix. */ once?: boolean; /** This request is already one part of a split brief: never split it again (19 Nov: a part of a form design re-split into itself until the stack overflowed). */ part?: boolean };
 
 // Plan text that is never a step id, even when it happens to match one (a label, an option, a stage name...).
 const TEXT_KEYS = new Set(['name', 'label', 'hint', 'subject', 'body', 'summary', 'equals', 'copy_of', 'based_on', 'after_step', 'to_step', 'step', 'description', 'options', 'add_options', 'list', 'type', 'object', 'action', 'by', 'event', 'sla_action', 'resolve_days', 'targets']);
@@ -812,7 +812,7 @@ async function planInParts(inventory: Inventory, request: string, split: import(
   opts.onStage?.('planning', `${n} forms, one at a time`);
   const results = await Promise.all(
     split.forms.map(async (f, i) => {
-      const r = await generatePlan(inventory, formRequest(split, i), { requester: ctx.requester }, { signal: opts.signal, cacheKey: opts.cacheKey, effort: 'low' });
+      const r = await generatePlan(inventory, formRequest(split, i), { requester: ctx.requester }, { signal: opts.signal, cacheKey: opts.cacheKey, effort: 'low', part: true });
       opts.onStage?.('planning', `${++done} of ${n} forms planned`);
       return { title: f.title, ...r };
     }),
@@ -833,7 +833,8 @@ async function planInParts(inventory: Inventory, request: string, split: import(
 
 /** Ask the model, check the plan, send the problems back once for a fix. Never touches Halo. */
 export async function generatePlan(inventory: Inventory, request: string, ctx: PlanContext = {}, opts: GenerateOptions = {}): Promise<PlanResult> {
-  const split = ctx.previous ? null : splitForms(request);
+  // A part is never split again: its text carries its own form marker, and a form design splits at one form.
+  const split = ctx.previous || opts.part || /This is part \d+ of \d+ of a larger request/.test(request) ? null : splitForms(request);
   if (split) return planInParts(inventory, request, split, ctx, opts);
   const { SYSTEM, userMsg, validate } = makePlanner(inventory, request, ctx);
   const revising = Boolean(ctx.previous);

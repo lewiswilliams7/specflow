@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
   const title = split.forms[i].title;
   const request = formRequest(split, i);
-  const opts = { signal: req.signal, cacheKey: `specflow-${inst.id}`, effort: 'low' as const, deadline: Date.now() + 280_000 };
+  const opts = { signal: req.signal, cacheKey: `specflow-${inst.id}`, effort: 'low' as const, deadline: Date.now() + 280_000, part: true };
   let result;
   try {
     if (body.fix) {
