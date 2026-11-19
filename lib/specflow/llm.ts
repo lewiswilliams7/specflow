@@ -14,12 +14,46 @@ export type CompleteOptions = {
   model?: string;
 };
 
+/**
+ * M28 (19 Nov): call the model API, retrying when the provider is briefly unavailable. Under load (eight forms planned
+ * at once) OpenAI's edge answered with an HTML error page, and reading it as JSON failed the whole part with
+ * 'Unexpected token "<"'. A busy or failing gateway (429, 5xx, or a reply that isn't JSON) is tried again up to twice,
+ * but only when it failed quickly, so a retry can't run the request past its time limit.
+ */
+async function callModel<T>(url: string, init: RequestInit): Promise<{ res: Response; json: T }> {
+  const RETRY = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 529]);
+  for (let attempt = 1; ; attempt++) {
+    const started = Date.now();
+    const res = await fetch(url, init);
+    const text = await res.text();
+    let json: T | undefined;
+    try {
+      json = JSON.parse(text) as T;
+    } catch {
+      json = undefined;
+    }
+    const quick = Date.now() - started < 90_000;
+    if ((json === undefined || RETRY.has(res.status)) && attempt < 3 && quick && !init.signal?.aborted) {
+      await new Promise((r) => setTimeout(r, attempt === 1 ? 4000 : 12000));
+      continue;
+    }
+    if (json === undefined) {
+      throw new Error(`The planner model's provider is having trouble (HTTP ${res.status}, it sent an error page instead of a plan). Wait a minute and send it again.`);
+    }
+    return { res, json };
+  }
+}
+
 export async function complete(system: string, user: string, opts: CompleteOptions = {}): Promise<{ text: string; model: string }> {
   const override = process.env.PLANNER_MODEL?.trim();
   if (process.env.OPENAI_API_KEY) {
     const model = override || opts.model || 'gpt-5';
     const base = (process.env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1').replace(/\/$/, '');
-    const res = await fetch(`${base}/chat/completions`, {
+    const { res, json } = await callModel<{
+      choices?: { message?: { content?: string } }[];
+      error?: { message?: string };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number }; completion_tokens_details?: { reasoning_tokens?: number } };
+    }>(`${base}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       signal: opts.signal,
@@ -35,11 +69,6 @@ export async function complete(system: string, user: string, opts: CompleteOptio
         ],
       }),
     });
-    const json = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-      error?: { message?: string };
-      usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number }; completion_tokens_details?: { reasoning_tokens?: number } };
-    };
     // One line per call in the server logs, so the cost of a plan can be seen (and checked when it seems high).
     if (json.usage) {
       const u = json.usage;
@@ -50,14 +79,13 @@ export async function complete(system: string, user: string, opts: CompleteOptio
   }
   if (process.env.ANTHROPIC_API_KEY) {
     const model = override || 'claude-sonnet-5-5';
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const { res, json } = await callModel<{ content?: { type: string; text?: string }[]; error?: { message?: string } }>('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
       signal: opts.signal,
       // The system prompt is the same on every call: cache it.
       body: JSON.stringify({ model, max_tokens: 16000, system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }], messages: [{ role: 'user', content: user }] }),
     });
-    const json = (await res.json()) as { content?: { type: string; text?: string }[]; error?: { message?: string } };
     if (!res.ok) throw new Error(`The planner model returned an error (${res.status}): ${json.error?.message ?? 'unknown'}`);
     return { text: (json.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join(''), model };
   }
