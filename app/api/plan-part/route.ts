@@ -29,23 +29,29 @@ export async function POST(req: Request) {
   const request = formRequest(split, i);
   const opts = { signal: req.signal, cacheKey: `specflow-${inst.id}`, effort: 'low' as const, deadline: Date.now() + 280_000 };
   let result;
-  if (body.fix) {
-    // A part that came back with problems: one more pass on that part alone, as a revision of its own plan.
-    if (!partIsSealed(inst.id, title, body.fix.plan ?? null, body.fix.seal)) return json(400, 'That part didn’t come from the planner. Send the message again.');
-    const problems = (body.fix.errors ?? []).slice(0, 40).map((e) => `- ${e}`).join('\n');
-    result = await generatePlan(
-      inst.inventory as Inventory,
-      `Fix only these problems in the plan for "${title}", and change nothing else:\n${problems}`,
-      { requester: { email: user.email ?? '' }, previous: body.fix.plan, history: [{ role: 'user', text: request }] },
-      opts,
-    );
-    // M12 can't apply here: this is always a fix of the same part.
-    if (result.plan) delete result.plan.fresh;
-  } else {
-    // Transcribing a written form design: low reasoning keeps each part well inside the time limit.
-    // One pass: if it has problems the browser asks for a fix, which comes back as a small patch (cheaper than a second
-    // full plan).
-    result = await generatePlan(inst.inventory as Inventory, request, { requester: { email: user.email ?? '' } }, { ...opts, once: true });
+  try {
+    if (body.fix) {
+      // A part that came back with problems: one more pass on that part alone, as a revision of its own plan.
+      if (!partIsSealed(inst.id, title, body.fix.plan ?? null, body.fix.seal)) return json(400, 'That part didn’t come from the planner. Send the message again.');
+      const problems = (body.fix.errors ?? []).slice(0, 40).map((e) => `- ${e}`).join('\n');
+      result = await generatePlan(
+        inst.inventory as Inventory,
+        `Fix only these problems in the plan for "${title}", and change nothing else:\n${problems}`,
+        { requester: { email: user.email ?? '' }, previous: body.fix.plan, history: [{ role: 'user', text: request }] },
+        opts,
+      );
+      // M12 can't apply here: this is always a fix of the same part.
+      if (result.plan) delete result.plan.fresh;
+    } else {
+      // Transcribing a written form design: low reasoning keeps each part well inside the time limit.
+      // One pass: if it has problems the browser asks for a fix, which comes back as a small patch (cheaper than a second
+      // full plan).
+      result = await generatePlan(inst.inventory as Inventory, request, { requester: { email: user.email ?? '' } }, { ...opts, once: true });
+    }
+  } catch (e) {
+    // Say why, instead of a bare 500 ("Planning part 1 failed (500)" told the user nothing, 19 Nov).
+    console.error('plan-part', title, e);
+    return json(500, `Planning "${title}" stopped: ${(e as Error).message}`.slice(0, 600));
   }
   return Response.json({ title, plan: result.plan, errors: result.errors, model: result.model, seal: sealPart(inst.id, title, result.plan) });
 }

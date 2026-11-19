@@ -715,8 +715,9 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
       // every exit at a stage not inserted yet. Halo inserts work the other way: hang each one after the same existing
       // stage, last first, so every exit points at a stage already there (the shape the fix pass found by hand on the
       // Vida Bank plan). Only a clean chain is turned round.
-      const chain = done.length >= 2 && done.every((x, k) => k === 0 || x.after_step.toLowerCase() === done[k - 1].name.toLowerCase());
-      const forward = chain && done.slice(0, -1).some((x, k) => (x.exits ?? []).some((e) => e.to_step.toLowerCase() === done[k + 1].name.toLowerCase()));
+      const low = (v: unknown) => String(v ?? '').trim().toLowerCase();
+      const chain = done.length >= 2 && done.every((x, k) => !!low(x.after_step) && !!low(x.name) && (k === 0 || low(x.after_step) === low(done[k - 1].name)));
+      const forward = chain && done.slice(0, -1).some((x, k) => (x.exits ?? []).some((e) => low(e?.to_step) === low(done[k + 1].name)));
       if (forward) {
         const anchor = done[0].after_step;
         const turned = [...done].reverse().map((x) => ({ ...x, after_step: anchor }));
