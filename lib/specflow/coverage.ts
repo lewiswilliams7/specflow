@@ -11,10 +11,12 @@ type BriefField = { label: string; required?: boolean; help?: string; rules: { v
 type BriefForm = { title: string; ticketType?: string; fields: BriefField[] };
 
 const norm = (t: string) => t.toLowerCase().replace(/^zz\s+(s\w+|enact test)\s+/, '').replace(/[^a-z0-9]/g, '');
+// Same word stems as the builder's F8 ("Start Date" ~ "Starting Date"), so the check agrees with what the build reuses.
+const stem = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w.replace(/(ing|ed|s)$/, '')).join('');
 const sameLabel = (a: string, b: string) => {
   const x = norm(a), y = norm(b);
   if (!x || !y) return false;
-  if (x === y) return true;
+  if (x === y || stem(a) === stem(b)) return true;
   // "Department / Team" and "Department" are the same field; "Other requester type" and "Requester type" aren't.
   const [short, long] = x.length < y.length ? [x, y] : [y, x];
   return short.length >= 5 && long.includes(short) && short.length / long.length >= 0.6 && !/other|details|reason|justification/.test(long.replace(short, ''));

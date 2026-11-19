@@ -278,7 +278,8 @@ ${ctx.previous ? REVISE : ''}${extra}`;
     const labelOfName = (n: string) => { const key = n.replace(/[\s*].*$/, ''); return cfd[key]?.match(/^"([^"]*)"/)?.[1] ?? key; };
     const formFields = Object.fromEntries(Object.entries((inventory.details?.ticket_types ?? {}) as Record<string, { fields?: string[]; groups?: Record<string, string[]> }>).map(([n, t]) => [n, [...(t.fields ?? []), ...Object.values(t.groups ?? {}).flat()].map((x) => labelOfName(String(x)))]));
     errors.push(...coverageErrors(plan, request, cfd, formFields));
-    return errors;
+    // The same form can be read twice (typed brief plus the attached sheet): report each problem once.
+    return [...new Set(errors)];
   }
   return { SYSTEM, userMsg, validate };
 }
@@ -541,20 +542,35 @@ export function applyWrittenRequirement(plan: Plan, request: string, inventory: 
  * so every reference still holds). Nothing is ever changed on the existing field.
  */
 export function applyWrittenOptions(plan: Plan, request: string, inventory: Inventory) {
-  const blocks = splitForms(request, 1)?.forms.map((f) => f.text) ?? [request];
+  const blocks = splitForms(request, 1)?.forms.map((f) => ({ title: f.title, text: f.text })) ?? [{ title: '', text: request }];
+  // M29 (19 Nov): kept per form. Three forms each had their own "Request Type" (Software, Mobile, Connectivity) and the
+  // last one's options were applied to all three.
   const written = new Map<string, { label: string; type: 'dropdown' | 'multiselect'; options: string[]; hint?: string; form: string }>();
-  for (const text of blocks) {
-    const form = text.match(/Ticket type:?\s*"([^"]+)"/i)?.[1]?.trim() ?? '';
+  const byLabel = new Map<string, string[]>(); // label → the forms that write it
+  for (const { title, text } of blocks) {
+    const form = text.match(/Ticket type:?\s*"([^"]+)"/i)?.[1]?.trim() ?? title.replace(/\s*\(.*$/, '').trim();
     for (const line of text.split('\n')) {
       const hit = line.match(/^\s*-\s+(.+?):\s+(single selection|dropdown|multiple selection|multi-select|multiselect)\b.*?\bOptions:\s*(.+?)(?:\.\s+(?:Show rules|Help text)\b|\.?\s*$)/i);
       if (!hit || /agreed|halo site|site\s*\/\s*location list/i.test(hit[3])) continue;
-      const options = hit[3].split(';').map((o) => o.trim().replace(/\.$/, '')).filter(Boolean);
+      // A design sheet separates options with ";", a typed brief usually with ",".
+      const options = hit[3].split(hit[3].includes(';') ? ';' : ',').map((o) => o.trim().replace(/\.$/, '')).filter(Boolean);
       if (!options.length) continue;
       const hint = line.match(/Help text:\s*"([^"]*)"/i)?.[1];
       const label = hit[1].trim();
-      written.set(label.toLowerCase(), { label, type: /multi/i.test(hit[2]) ? 'multiselect' : 'dropdown', options, hint, form });
+      written.set(`${form.toLowerCase()}|${label.toLowerCase()}`, { label, type: /multi/i.test(hit[2]) ? 'multiselect' : 'dropdown', options, hint, form });
+      byLabel.set(label.toLowerCase(), [...(byLabel.get(label.toLowerCase()) ?? []), form.toLowerCase()]);
     }
   }
+  // The form a field step is on: the ticket type that lists it.
+  const formsOf = (id: string) => (plan.steps as PlanStep[])
+    .filter((t) => t.object === 'ticket_type' && [...(t.fields ?? []), ...(t.set?.add_fields ?? [])].some((f) => f.ref === id))
+    .map((t) => String(t.name ?? t.match?.name ?? '').toLowerCase());
+  const writtenFor = (id: string, label: string) => {
+    for (const f of formsOf(id)) { const w = written.get(`${f}|${label}`); if (w) return w; }
+    // Not on a form we can name: only a label written once in the brief is safe to use.
+    const forms = [...new Set(byLabel.get(label) ?? [])];
+    return forms.length === 1 ? written.get(`${forms[0]}|${label}`) : undefined;
+  };
   if (!written.size) return;
   const cf = (inventory as unknown as { details?: { custom_fields?: Record<string, string> } }).details?.custom_fields ?? {};
   const taken = new Set([...Object.keys(cf), ...plan.steps.map((x) => String(x.name ?? ''))].map((n) => n.toLowerCase()));
@@ -562,7 +578,7 @@ export function applyWrittenOptions(plan: Plan, request: string, inventory: Inve
     if (st.object !== 'field' || st.action !== 'reuse') continue;
     const details = cf[st.match?.name ?? ''];
     const label = String(details?.match(/^"([^"]*)"/)?.[1] ?? st.match?.name ?? '').trim().toLowerCase();
-    const w = written.get(label);
+    const w = writtenFor(st.id, label);
     if (!w || !details) continue;
     const optsOf = (d: string) => (d.match(/^"[^"]*"\s+[^:]+:\s*(.*)$/)?.[1] ?? '').replace(/\s+\(hint: .*\)\s*$/, '').split(' | ').map((o) => o.trim().toLowerCase());
     const have = optsOf(details);
