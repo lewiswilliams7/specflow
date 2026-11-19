@@ -1649,7 +1649,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
             const sec = formSections(current).find((x) => x.fields.some((r) => String(r.fieldid) === String(refs[h.ref]?.id) || (!!refs[h.ref]?.name && String((r.fieldinfo as Row)?.name ?? '').toLowerCase() === String(refs[h.ref]?.name).toLowerCase())));
             const what = refs[h.ref]?.row?.label ?? refs[h.ref]?.name ?? h.ref;
             if (sec) warn(`note: help text for "${what}" not set: it sits in the section "${sec.name}", where help text can't be set for one form`);
-            else warn(`field_hints: ${what} isn't directly on this form`);
+            // Help text is cosmetic: a field not on the form here (often one an earlier step of this plan adds, which a
+            // dry run can't see yet) is skipped with a note, never a blocker (19 Nov, Bruntwood).
+            else warn(`note: help text for "${what}" not set here: it isn't on this form yet. If an earlier step adds it, the real build sets it then; otherwise set it in Halo`);
             continue;
           }
           row[hk] = h.hint;
