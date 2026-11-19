@@ -51,7 +51,11 @@ export async function POST(req: Request) {
   } catch (e) {
     // Say why, instead of a bare 500 ("Planning part 1 failed (500)" told the user nothing, 19 Nov).
     console.error('plan-part', title, e);
-    return json(500, `Planning "${title}" stopped: ${(e as Error).message}`.slice(0, 600));
+    // A code fault (not the model or Halo) carries where it happened, so it can be fixed from the message alone.
+    const where = e instanceof RangeError || e instanceof TypeError
+      ? ` [at ${String((e as Error).stack ?? '').split('\n').slice(1, 5).map((l) => l.trim().replace(/^at /, '').replace(/\(?(?:file:\/\/)?\/[^)]*\/([^/)]+)\)?/, '$1')).join(' < ')}]`
+      : '';
+    return json(500, `Planning "${title}" stopped: ${(e as Error).message}${where}`.slice(0, 900));
   }
   return Response.json({ title, plan: result.plan, errors: result.errors, model: result.model, seal: sealPart(inst.id, title, result.plan) });
 }
