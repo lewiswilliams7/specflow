@@ -147,9 +147,13 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
     const shown = step.name ?? step.match?.name ?? step.id;
     const label = `${i + 1}/${plan.steps.length} ${step.object.padEnd(16)} ${shown}`;
     const warnings: string[] = [];
-    const warn = (m: string) => warnings.push(m);
+    // B4 (19 Nov): a translator can say "note: ..." for something it skipped on purpose and can explain (help text on a
+    // field that sits in a shared section). A note is shown with the step but never blocks the build.
+    const notes: string[] = [];
+    const warn = (m: string) => (m.startsWith('note: ') ? notes.push(m.slice(6)) : warnings.push(m));
     const record = (entry: Omit<StepLog, 'step' | 'object' | 'name' | 'warnings'>) => {
-      const full: StepLog = { step: step.id, object: step.object, name: shown, warnings, ...entry };
+      const detail = [entry.detail, ...notes].filter(Boolean).join('; ') || undefined;
+      const full: StepLog = { step: step.id, object: step.object, name: shown, warnings, ...entry, ...(detail ? { detail } : {}) };
       log.push(full);
       opts.emit?.({ type: 'step', index: i, total: plan.steps.length, entry: full });
     };

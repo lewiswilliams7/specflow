@@ -716,7 +716,7 @@ function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: 
   // Rule F9 (2026-10-23): FProjectStartDate looked up by name was id -19, but the one on Change Scheduling is -105.
   // Match a field to a form row by id OR by the row's own field name.
   const sameField = (r: Row, ref: string) =>
-    Number(r.fieldid) === Number(refs[ref]?.id) || (!!refs[ref]?.name && names.get(Number(r.id)) === String(refs[ref]?.name).toLowerCase());
+    Number(r.fieldid) === Number(refs[ref]?.id) || (refs[ref]?.id !== undefined && String(r.fieldid) === String(refs[ref]?.id)) || (!!refs[ref]?.name && names.get(Number(r.id)) === String(refs[ref]?.name).toLowerCase());
   const inSection = (ref: string) => sections.find((x) => x.fields.some((r) => Number(r.fieldid) === Number(refs[ref]?.id) || (!!refs[ref]?.name && String((r.fieldinfo as Row)?.name ?? '').toLowerCase() === String(refs[ref]?.name).toLowerCase())));
   const m = SPIKE_MAP.ticketType;
   const level = (b?: boolean) => (b ? m.mandatoryValue : m.optionalValue);
@@ -726,8 +726,10 @@ function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: 
       // F8b (15 Nov): the field is on the form inside a section, so the ticket type has no row for it. Saying "add it"
       // contradicted F8 ("already on the form") and the fix pass went round in circles. Say where it really is.
       const sec = inSection(c.ref);
-      if (sec) warn(`field_mandatory: "${refs[c.ref]?.row?.label ?? refs[c.ref]?.name ?? c.ref}" is inside the section "${sec.name}" on this form, not a loose field. Don't add it again: make it mandatory with a field_group update (match "${sec.name}", set.field_mandatory), which changes that section on every form using it, or drop this mandatory change.`);
-      else warn(`field_mandatory: ${c.ref} isn't on this form; add it with add_fields`);
+      if (sec) { warn(`field_mandatory: "${refs[c.ref]?.row?.label ?? refs[c.ref]?.name ?? c.ref}" is inside the section "${sec.name}" on this form, not a loose field. Don't add it again: make it mandatory with a field_group update (match "${sec.name}", set.field_mandatory), which changes that section on every form using it, or drop this mandatory change.`); continue; }
+      // F8c (19 Nov): "make X mandatory on this form" for a field not on it at all means add it, mandatory (the plan
+      // listed Department / Team only under field_mandatory and the build refused).
+      if (!add.some((a) => a.ref === c.ref)) add = [...add, { ref: c.ref, mandatory: c.mandatory }];
       continue;
     }
     for (const k of m.mandatoryKeys ?? []) row[k] = level(c.mandatory);
@@ -1641,7 +1643,15 @@ export const translators: Record<PlanStep['object'], Translator> = {
           const hk = SPIKE_MAP.formRow.hintOverride;
           if (!hk) { gap('form help text override', warn); break; }
           const row = rows.find((x) => String(x.fieldid) === String(refs[h.ref]?.id));
-          if (!row) { warn(`field_hints: ${refs[h.ref]?.row?.label ?? h.ref} isn't directly on this form`); continue; }
+          if (!row) {
+            // F14b (19 Nov): a field inside a section has no row of its own here, so its help text can't be set for this
+            // form alone. Skip it and say so; it doesn't block the build.
+            const sec = formSections(current).find((x) => x.fields.some((r) => String(r.fieldid) === String(refs[h.ref]?.id) || (!!refs[h.ref]?.name && String((r.fieldinfo as Row)?.name ?? '').toLowerCase() === String(refs[h.ref]?.name).toLowerCase())));
+            const what = refs[h.ref]?.row?.label ?? refs[h.ref]?.name ?? h.ref;
+            if (sec) warn(`note: help text for "${what}" not set: it sits in the section "${sec.name}", where help text can't be set for one form`);
+            else warn(`field_hints: ${what} isn't directly on this form`);
+            continue;
+          }
           row[hk] = h.hint;
         }
         let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));

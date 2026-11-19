@@ -381,17 +381,12 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     // The reply may name the step, or say it removed that kind of thing ("removed the steps that created a new
     // approval process"). A step that only pointed at another dropped step goes with it (attaching that approval).
     const DROP_VERB = /\b(remov|drop|delet|no longer|instead|replac|undo|undid|scrap|took out|taken out)/;
-    // The words people use for each kind of thing (19 Nov: "removed the Leaver section change" was a field_group).
-    const WORDS: Record<string, string[]> = { field_group: ['field group', 'section'], service_category: ['service categor', 'categor'], service: ['service'], ticket_type: ['ticket type', 'form', 'request type'], approval_process: ['approval'], outcome: ['action', 'button'], workflow: ['workflow'] };
-    const saysDropped = (object: string) => DROP_VERB.test(reply) && (WORDS[object] ?? [object.replace(/_/g, ' ')]).some((w) => reply.includes(w));
-    // A drop the user's latest message asked for is not a silent drop.
-    const latest = String(ctx.userMessages?.at(-1) ?? '').toLowerCase();
-    const asked = (n: string) => !!n && DROP_VERB.test(latest) && latest.includes(n.toLowerCase());
+    const saysDropped = (object: string) => DROP_VERB.test(reply) && reply.includes(object.replace(/_/g, ' '));
     for (const p of dropped) {
       if (refsOf(p).some((r) => droppedIds.has(r))) continue;
       const shown = String(p.label ?? p.name ?? p.match?.name ?? '');
       const label = fieldLabel(ctx.fieldDetails?.[p.match?.name ?? '']) ?? shown;
-      if (![shown, label].some((n) => n && (reply.includes(n.toLowerCase()) || asked(n))) && !saysDropped(p.object))
+      if (![shown, label].some((n) => n && reply.includes(n.toLowerCase())) && !saysDropped(p.object))
         errors.push(`the follow-up drops "${label}" (${p.object}) from the plan without saying so. Keep it, or if the user asked for it to go, name it in reply.`);
     }
   }
