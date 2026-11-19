@@ -757,6 +757,31 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     plan.assumptions = [...(plan.assumptions ?? []), `"${tt.name}" keeps the workflow of "${tt.based_on}" ("${wf}"), which it's copied from.`];
   }
 
+  // M30 (19 Nov): a show rule on an existing dropdown that lacks the answer it tests ("Other" on Bruntwood's
+  // Application / System, which only had a placeholder option) gets that option added. Adding an option only adds,
+  // so the check "has no option Other" is repaired in code instead of sent round the model again.
+  {
+    const cfOpts = (inventory.details?.custom_fields ?? {}) as Record<string, string>;
+    const optsOf = (d: string) => (d.match(/^"[^"]*"\s+[^:]+:\s*(.*)$/)?.[1] ?? '').replace(/\s+\(hint: .*\)\s*$/, '').split(' | ').map((o) => o.trim()).filter(Boolean);
+    const all = plan.steps as PlanStep[];
+    for (const t of all.filter((x) => x.object === 'ticket_type')) {
+      for (const c of t.set?.show_field_when ?? []) {
+        const f = all.find((x) => x.id === c.when);
+        const name = f?.action === 'reuse' ? f.match?.name : undefined;
+        const details = name ? cfOpts[name] : undefined;
+        if (!name || !details || !/ (dropdown|multiselect|multi-select)/.test(details)) continue;
+        const added = all.filter((x) => x.object === 'field' && x.action === 'update' && x.match?.name === name).flatMap((x) => x.set?.add_options ?? []);
+        const have = [...optsOf(details), ...added].map((o) => o.toLowerCase());
+        const missing = [c.equals].flat().map(String).filter((v) => v && !have.includes(v.toLowerCase()));
+        if (!missing.length) continue;
+        const upd = all.find((x) => x.object === 'field' && x.action === 'update' && x.match?.name === name);
+        if (upd) upd.set = { ...(upd.set ?? {}), add_options: [...(upd.set?.add_options ?? []), ...missing] };
+        else all.splice(all.indexOf(t), 0, { id: `${c.when}_add_options`, object: 'field', action: 'update', match: { name }, set: { add_options: missing } } as PlanStep);
+        plan.assumptions = [...(plan.assumptions ?? []), `Added ${missing.map((m) => `"${m}"`).join(', ')} to the existing field ${name} so its show rule can work (the field's other options are kept).`];
+      }
+    }
+  }
+
   // M27 (15 Nov): a top-level service category the brief asks to create but the instance already has is reused, not
   // made twice ("Business services" on the Vida Bank demo instance).
   const topCats = ((inventory as unknown as { service_categories?: string[] }).service_categories ?? []).map(String).filter((p) => !p.includes(' > '));
