@@ -6,7 +6,7 @@
  */
 import { ensureTemplates } from './discover';
 import { extractList, firstRecord, runtime } from './runtime';
-import { type Plan, type Refs, refsOf, translators } from './translators';
+import { type Plan, type Refs, SPIKE_MAP, refsOf, translators } from './translators';
 
 export type Outcome = 'reused' | 'already exists' | 'created' | 'would create' | 'updated' | 'would update' | 'failed' | 'stopped';
 export type StepLog = {
@@ -150,6 +150,38 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
     return done(false, missing.map((m) => `Pre-flight: ${m}`));
   }
   say('Pre-flight OK: everything the plan needs to find exists.\n');
+
+  // F15 (round 45): attachment fields need the instance setting "client side uploads". When a plan creates one and the
+  // setting is off, the build switches it on first (one key on /Control, read back). Shown in the dry run, so the person
+  // sees it in the preview before anything is written. It affects the whole instance, not just this form.
+  const IS = SPIKE_MAP.instanceSettings;
+  if (IS.resource && IS.clientSideUploads && plan.steps.some((s) => s.object === 'field' && s.action === 'create' && s.type === 'attachment')) {
+    const key = IS.clientSideUploads;
+    const entry = (outcome: Outcome, extra: Partial<StepLog> = {}) => {
+      const e: StepLog = { step: 'instance', object: 'instance_setting', name: 'client side uploads', outcome, warnings: [], ...extra };
+      log.push(e); // in the run log and preview; not a numbered plan step, so no progress event
+    };
+    try {
+      const ctl = firstRecord(await halo.get(`/${IS.resource}`)) ?? {};
+      if (ctl[key] === true) {
+        say('✓ instance setting   client side uploads already on');
+      } else if (!apply) {
+        entry('would update', { detail: 'client side uploads: off → on (needed for attachment fields; applies to the whole instance)' });
+        say('· instance setting   would switch on client side uploads (needed for attachment fields; applies to the whole instance)');
+      } else {
+        await halo.post(`/${IS.resource}`, [{ [key]: true }]);
+        const back = firstRecord(await halo.get(`/${IS.resource}`)) ?? {};
+        if (back[key] !== true) throw new Error(`Halo kept ${key} = ${JSON.stringify(back[key])}`);
+        entry('updated', { detail: 'client side uploads: off → on' });
+        say('~ instance setting   switched on client side uploads, verified');
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      entry('failed', { error: message });
+      say(`✗ instance setting   client side uploads FAILED\n    ${message}\n\nStopped: attachment fields can't be made without it.`);
+      return done(false, []);
+    }
+  }
 
   let stopped = false;
   for (const [i, step] of plan.steps.entries()) {

@@ -290,7 +290,7 @@ export default function Home() {
             <div className="faq">
               <details>
                 <summary>Can it read our request form design template?</summary>
-                <p>Yes. Attach the spreadsheet to a message. {site.name} reads the form name, fields, types, mandatory flags, options, show rules and help text in code, so nothing is paraphrased. Anything it can&apos;t build, such as attachments or tables on a form, is listed for you.</p>
+                <p>Yes. Attach the spreadsheet to a message. {site.name} reads the form name, fields, types, mandatory flags, options, show rules and help text in code, so nothing is paraphrased. Anything it can&apos;t build, such as a table on a form, is listed for you.</p>
               </details>
               <details>
                 <summary>What does {site.name} read in Halo?</summary>

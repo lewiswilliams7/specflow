@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 46 (20 Nov): names for Halo's built-in tabs (translation keys in tab_config), read-only.
  * Round 45 (20 Nov): more settings endpoints for client side uploads; layout tab_config read in full, /Tabs, and one tab
  * hidden on the zz form.
  * Round 44 (20 Nov): Enact finds the client side uploads switch and turns it on (one key, only if unambiguous), then the
@@ -81,7 +82,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 45;
+export const ROUND = 46;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -283,102 +284,49 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('uploads setting', async () => {
-    const A = 'uploads setting';
-    // Round 44 (20 Nov): round 43's attachment field was still refused ("Must enable client side uploads"). Lewis wants
-    // Enact to switch it on itself. Read the instance settings, find the key; only if exactly ONE true/false key names
-    // client side uploads and it is off, switch it on (one key, partial post, read back). Otherwise write nothing.
-    const UP = /upload|clientside|client_side|s3|blob|storage/i;
-    const CSU = /client.?side.?upload/i;
-    for (const ep of ['Control', 'Features', 'ControlSettings', 'GeneralSettings', 'SystemSettings', 'Setting', 'AppSettings', 'Instance']) {
-      let rec: Row | null = null;
-      try { rec = firstRecord(await runtime().halo.get(`/${ep}`)); } catch (e) { note(A, `${ep}: error`, err(e).slice(0, 160)); continue; }
-      if (!rec || !Object.keys(rec).length) { note(A, ep, 'no record'); continue; }
-      note(A, `${ep}: key count`, Object.keys(rec).length);
-      note(A, `${ep}: upload keys`, Object.fromEntries(Object.entries(rec).filter(([k, v]) => UP.test(k) && typeof v !== 'object')));
-      const hits = Object.keys(rec).filter((k) => CSU.test(k) && typeof rec?.[k] === 'boolean');
-      note(A, `${ep}: client side upload switches`, hits.map((k) => `${k}=${rec?.[k]}`));
-      if (hits.length !== 1) { summary.push(`· uploads setting: ${hits.length} candidate keys on /${ep}, nothing switched`); break; }
-      const key = hits[0];
-      if (rec[key] === true) { summary.push(`✓ uploads setting: ${key} already on`); break; }
-      if (!apply) break;
-      const patch: Row = { [key]: true };
-      if (rec.id !== undefined) patch.id = rec.id;
-      try {
-        await runtime().halo.post(`/${ep}`, [patch]);
-        const back = firstRecord(await runtime().halo.get(`/${ep}`));
-        const changed = Object.keys(rec).filter((k) => JSON.stringify(rec?.[k]) !== JSON.stringify(back?.[k]));
-        note(A, `${ep}: switched ${key}`, { kept: back?.[key], other_keys_changed: changed.filter((k) => k !== key).slice(0, 30) });
-        summary.push(back?.[key] === true ? `✓ uploads setting: Enact switched ${key} on` : `✗ uploads setting: posted ${key}=true, Halo kept ${JSON.stringify(back?.[key])}`);
-      } catch (e) {
-        note(A, `${ep}: switch error`, err(e));
-        summary.push(`✗ uploads setting: ${err(e).slice(0, 200)}`);
-      }
-      break;
-    }
-  });
-
-  await area('attachment field', async () => {
-    const A = 'attachment field';
-    // Round 43 (20 Nov): round 42 showed type 11 is Attachment, refused until "client side uploads" is on. Lewis switches
-    // that on in the trial first. Then (1) make one attachment field from Halo's own text field (type changed only),
-    // read it back; (2) prove the builder makes one and puts it on the zz form; Lewis uploads a file on the portal.
-    const fields = (await list('FieldInfo')).rows;
-    const textField = fields.find((f) => Number(f.type) === 0 && own(f) && !/TOM|Accountable/i.test(nameOf(f)));
-    if (textField) {
-      const base = cleanForCreate(await detail('FieldInfo', textField.id)) as Row;
-      for (const k of ['values', 'id', 'guid']) delete base[k];
-      const id = await create(A, 'type 11 sample', 'FieldInfo', { ...base, name: 'zzEnactR43Attachment', label: 'zz Enact r43 attachment', type: 11 });
-      if (id) note(A, 'type 11 read back', settings(await detail('FieldInfo', id)));
-    }
+  await area('tab names', async () => {
+    const A = 'tab names';
+    // Round 46 (20 Nov): tab_config names Halo's built-in tabs by translation key ("agentweb_152"). Find where Halo keeps
+    // the English text for those keys, so Enact can say "hide everything but Progress, Attachments, ...". Read-only.
     const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
-    if (!form) { note(A, 'proof skipped', 'no "zz Enact r36 form" ticket type'); return; }
-    await prove('attachment field on a form', {
-      summary: 'Round 43: an attachment field on the sample form',
-      steps: [
-        { id: 'up', object: 'field', action: 'create', name: 'zzEnactR43Upload', label: 'zz Enact r43 upload', type: 'attachment' },
-        { id: 'tt', object: 'ticket_type', action: 'update', match: { name: nameOf(form) }, set: { add_fields: [{ ref: 'up' }] } },
-      ],
-    } as unknown as Plan);
-    summary.push('· attachment: on the trial portal, raise a "zz Enact r36 form" ticket, attach a file in "zz Enact r43 upload", then open the ticket as an agent and check the file is there');
-  });
-
-  await area('layout', async () => {
-    const A = 'layout';
-    // Round 45 (20 Nov): round 44 found the layout. GET /TicketType/{id}?includeconfig=true returns tab_config (60 rows:
-    // tab_id, tab_name like "agentweb_152", sequence, display, nosidemenu). /Tabs has 43 rows. Now: (1) tab_config in
-    // full on a tab_display 1 type and a 0 type; (2) /Tabs rows; (3) the zz form's tab_config, then ONE change: hide one
-    // tab that is shown, post tab_config back, read back. Lewis says which tab vanished.
-    const cfg = async (id: unknown) => { try { return firstRecord(await runtime().halo.get(`/TicketType/${id}`, { includedetails: 'true', includeconfig: 'true' })); } catch { return null; } };
-    const rows = (d: Row | null) => ((d?.tab_config as Row[]) ?? []);
-    const compact = (r: Row) => `${r.tab_id} ${r.tab_name} seq ${r.sequence} display ${r.display}${r.nosidemenu ? ' nosidemenu' : ''}${r.screenlayout_id ? ' layout ' + r.screenlayout_id : ''}`;
-    for (const id of [2, 1]) {
-      const d = await cfg(id);
-      note(A, `tab_config on ${id} ${nameOf(d ?? {})} (tab_display ${d?.tab_display})`, rows(d).map(compact));
-      if (id === 2 && rows(d)[0]) note(A, 'a tab_config row in full', rows(d)[0]);
-    }
-    const tabs = (await list('Tabs')).rows;
-    note(A, '/Tabs keys', Object.keys(tabs[0] ?? {}));
-    note(A, '/Tabs rows', tabs.map((t) => Object.entries(t).filter(([, v]) => typeof v !== 'object').map(([k, v]) => `${k}=${short(v)}`).join(' ')).slice(0, 45));
-    const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
-    if (!form) return;
-    const before = await cfg(form.id);
-    note(A, 'zz form tab_config before', rows(before).map(compact));
-    if (!apply || !rows(before).length) { summary.push('· layout: zz form has no tab_config rows to change'); return; }
-    const shown = rows(before).filter((r) => Number(r.display) === 1);
-    const target = shown[shown.length - 1];
-    if (!target) return;
-    const next = rows(before).map((r) => (r.id === target.id ? { ...r, display: 0 } : r));
+    let keys: string[] = [];
     try {
-      await runtime().halo.post('/TicketType', [{ id: Number(form.id), tab_config: next }]);
-      const after = await cfg(form.id);
-      const diff = rows(after).filter((r) => { const b = rows(before).find((x) => x.tab_id === r.tab_id && x.tab_name === r.tab_name); return !b || b.display !== r.display || b.sequence !== r.sequence; }).map(compact);
-      note(A, 'zz form: hid one tab', { hidden: compact(target), rows_before: rows(before).length, rows_after: rows(after).length, changed: diff, tab_display_after: after?.tab_display });
-      summary.push(`· layout: Enact hid tab "${target.tab_name}" (tab_id ${target.tab_id}) on "zz Enact r36 form". Open a ticket of that type as an agent and tell Claude which tab is missing`);
-    } catch (e) {
-      note(A, 'zz form hide tab error', err(e));
-      summary.push(`✗ layout hide tab: ${err(e).slice(0, 200)}`);
+      const d = firstRecord(await runtime().halo.get(`/TicketType/${form?.id ?? 2}`, { includedetails: 'true', includeconfig: 'true' }));
+      keys = ((d?.tab_config as Row[]) ?? []).map((r) => String(r.tab_name)).filter((k) => /^(agentweb|miscterms)|^[a-z]+$/.test(k));
+    } catch (e) { note(A, 'tab_config error', err(e)); }
+    note(A, 'keys to name', keys.length);
+    const want = new Set(keys);
+    const found: Record<string, unknown> = {};
+    const walk = (v: unknown, path: string, depth = 0) => {
+      if (depth > 6 || !v || typeof v !== 'object') return;
+      for (const [k, x] of Object.entries(v as Row)) {
+        if (want.has(k) && typeof x !== 'object') found[k] ??= { at: path, text: short(x) };
+        if (typeof x === 'string' && want.has(x)) found[x] ??= { at: path, row: short(v) };
+        if (x && typeof x === 'object') walk(x, `${path}.${k}`, depth + 1);
+      }
+    };
+    const tried: Row = {};
+    const probes: [string, Record<string, string>?][] = [
+      ['Language'], ['Language/1'], ['LanguagePack'], ['LanguagePack/1'], ['Translation'], ['Translation', { language_id: '1' }],
+      ['Translations'], ['Languages'], ['Language/1', { includedetails: 'true' }], ['LanguageTerm'], ['Terminology'],
+    ];
+    for (const [ep, params] of probes) {
+      const label = ep + (params ? '?' + new URLSearchParams(params).toString() : '');
+      try {
+        const res = await runtime().halo.get(`/${ep}`, params);
+        const text = JSON.stringify(res);
+        const before = Object.keys(found).length;
+        walk(res, ep);
+        tried[label] = `${text.length} chars, ${text.includes('agentweb_152') ? 'HAS agentweb_152' : 'no tab keys'}, named ${Object.keys(found).length - before}`;
+        if (text.length < 4000 && !text.includes('agentweb')) tried[`${label} sample`] = text.slice(0, 600);
+      } catch (e) { tried[label] = `error: ${err(e).slice(0, 100)}`; }
+      if (Object.keys(found).length >= keys.length) break;
     }
+    note(A, 'endpoints tried', tried);
+    note(A, 'names found', found);
+    note(A, 'still unnamed', keys.filter((k) => !(k in found)));
+    summary.push(`· tab names: named ${Object.keys(found).length} of ${keys.length} built-in tabs`);
+    summary.push('· tab names: also send Claude a screenshot of the tab bar on a "zz Enact r36 form" ticket (open one as an agent), in case Halo keeps the names only in the browser');
   });
 
   return { out, summary };

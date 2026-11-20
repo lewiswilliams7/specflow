@@ -27,12 +27,16 @@ export const SPIKE_MAP = {
      *  Built by the builder in round 39. */
     richtext: 10,
     /** Round 42 (20 Nov, Concord): Halo refused type 11 with "Must enable client side uploads to use attachment custom
-     *  fields" (rule F15). Built only once round 43 proves it on a form. */
+     *  fields" (rule F15). Round 45: built by the builder (field 366) and added to the zz form (65) once the setting was on. */
     attachment: 11,
     /** Round 42: type 7 needs a custom table ("A table must be selected"; Halo's own type 7 fields carry table_id). Not
      *  buildable until Enact can make or pick the table (rule F16). */
     table: null,
   } as Record<string, number | null>,
+
+  /** Round 45 (20 Nov, Concord): instance settings live on GET/POST /Control (2,123 keys). Client side uploads is
+   *  enableclientsideuploads; a partial POST { enableclientsideuploads: true } was kept and changed no other key (F15). */
+  instanceSettings: { resource: 'Control' as string | null, clientSideUploads: 'enableclientsideuploads' as string | null },
 
   field: {
     label: 'label' as string | null, //   evidence: fieldinfo-141 label "First Name"
@@ -452,7 +456,7 @@ export const FEATURES: Feature[] = [
     key: 'attachments',
     name: 'attachments on a form',
     sections: ['attachments'],
-    prompt: `- Attachments are a setting on the form, not a field (T9): ticket_type update (or create) set: { attachments: { allow: true, min: 0 } }; min: 1 when the request says an attachment is required on EVERY ticket (a conditional or optional upload stays min 0, and say in assumptions it can't be required only sometimes). Never create a field for an upload.`,
+    prompt: `- Attachments are a setting on the form, not a field (T9): ticket_type update (or create) set: { attachments: { allow: true, min: 0 } }; min: 1 when the request says an attachment is required on EVERY ticket (a conditional or optional upload stays min 0, and say in assumptions it can't be required only sometimes). For a general "attach files" on the form use this setting. A NAMED upload box in a design (e.g. "MATB1 Upload", "Supporting documents") is a field of type attachment (F15) added to the form like any other field.`,
   },
   {
     key: 'read_only',

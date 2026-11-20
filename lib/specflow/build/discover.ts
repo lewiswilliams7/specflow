@@ -51,18 +51,22 @@ export function needsFor(steps: PlanStep[]): Need[] {
         const type = s.type ?? 'text';
         const code = SPIKE_MAP.fieldTypes[type];
         const lookup = type === 'dropdown' || type === 'multiselect';
+        // F15 (round 45): an instance with no attachment field yet copies its own text field; the translator sets type 11.
+        // Evidence: field 365 made from a text field with type 11 was kept as type 11.
+        const shapeFrom = type === 'attachment' ? [code, SPIKE_MAP.fieldTypes.text] : [code];
         add({
           file: fieldTemplateFile(type),
           resource: 'FieldInfo',
           why: `${type} field`,
-          listFilter: (r) => Number(r.id) > 0 && String(r.name ?? '').startsWith('CF') && (r.type === undefined || r.type === code),
+          listFilter: (r) => Number(r.id) > 0 && String(r.name ?? '').startsWith('CF') && (r.type === undefined || shapeFrom.includes(r.type as number)),
           // Lookups must be a field's OWN static list (extratype 1). A field fed by a built-in list
           // (e.g. regions) ignores the values we send and shows its own (rule D2, 2026-10-19).
           // Rule F10 (2026-10-24): only a TICKET field (usage 1). A custom-table field (usage 1010, e.g. the "Accountable"
           // tab) copied onto a form looks right but never stores what's typed, so a mandatory one always fails.
           accept: (d) =>
-            d.type === code && Number(d.custom) === 1 && Number(d.usage) === 1 &&
+            shapeFrom.includes(d.type as number) && Number(d.custom) === 1 && Number(d.usage) === 1 &&
             (!lookup || (Number(d.extratype) === 1 && Array.isArray(d.values) && d.values.length > 0)),
+          ...(type === 'attachment' ? { prefer: (d: Row) => d.type === code } : {}),
           maxDetails: 60,
         });
         break;
