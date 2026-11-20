@@ -36,7 +36,9 @@ function readField(line: string): BriefField | null {
   // The first requirement word outside brackets decides ("optional (… never required)" is optional).
   const word = head.replace(/\([^)]*\)/g, ' ').match(/\b(required|mandatory|conditional|optional)\b/i)?.[1]?.toLowerCase();
   const required = word ? word !== 'optional' : undefined;
-  const help = rest.match(/Help text:\s*"([^"]*)"/i)?.[1] ?? head.match(/\(([^()]{3,})\)\s*\.?\s*$/)?.[1];
+  // Brackets at the end of a line are help text only when the line has no options list: "Other (please specify)" is
+  // an option, not a hint (20 Nov, Compleat Title field).
+  const help = rest.match(/Help text:\s*"([^"]*)"/i)?.[1] ?? (/\bOptions?\s*:/i.test(head) ? undefined : head.match(/\(([^()]{3,})\)\s*\.?\s*$/)?.[1]);
   const rules: BriefField['rules'] = [];
   // "If 'Other' selected → show fields: A and B" (design sheets)
   // Rules are separated by " / "; a "/" inside a label ("New High/Low Risk") is not a separator (20 Nov).
