@@ -153,7 +153,7 @@ ${readyFeaturePrompt()}
   const prev = ctx.previous ? `CURRENT PLAN (shown to the user on the previous turn):\n${JSON.stringify(ctx.previous)}\n\n` : '';
   const asked = ctx.askedBefore?.length ? `QUESTIONS ALREADY ASKED (the user has replied since; never ask these again):\n- ${ctx.askedBefore.join('\n- ')}\n\n` : '';
   const userMsg = (extra = '') => `INSTANCE INVENTORY (what already exists on this Halo):
-${JSON.stringify(inventory)}
+${JSON.stringify({ ...inventory, report: undefined })}
 
 ${who}${convo}${prev}${asked}${ctx.history?.length ? 'LATEST MESSAGE' : 'REQUEST'}:
 ${request}

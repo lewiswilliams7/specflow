@@ -145,7 +145,8 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
 
   say(`${ticketTypes.length} ticket types`);
   const ticket_types: Record<string, Row> = {};
-  for (const d of await pool(ticketTypes, (t) => get('TicketType', t.id))) {
+  const ttDetails = await pool(ticketTypes, (t) => get('TicketType', t.id));
+  for (const d of ttDetails) {
     const groups: Record<string, string[]> = {};
     const loose: string[] = [];
     for (const row of (d.fields as Row[]) ?? []) {
@@ -207,8 +208,72 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
   for (const d of await pool(slas, (s) => get('SLA', s.id)))
     sla_targets[nameOf(d)] = ((d.priorities as Row[]) ?? []).map((p) => `${p.name} ${p.fixtime}${String(p.fixunits ?? '').toLowerCase()}`).join(', ');
 
+  // AB1 (20 Nov): what the as-built document needs to show a client their forms and portal exactly as Halo has them.
+  // Kept under `report`, which the planner never sends to the model. A failure here never stops the read.
+  let report: Record<string, unknown> | undefined;
+  try {
+    say('forms, portal and categories for the as-built document');
+    const fieldById = new Map(fieldDetails.map((f) => [Number(f.id), f]));
+    const rowOf = (row: Row, section?: string) => {
+      const f = fieldById.get(Number(row.fieldid)) ?? ((row.fieldinfo as Row) ?? {});
+      const type = FIELD_TYPE_NAMES[Number(f.type)] ?? (fieldById.has(Number(row.fieldid)) ? `type ${f.type}` : 'Halo field');
+      const options = ((f.values as Row[]) ?? []).map((v) => String(v.name)).filter(Boolean);
+      const help = String(row.override_hint ?? '').trim() || String(f.hint ?? '').trim();
+      const conds = ((row.group_visibility_conditions as Row[]) ?? []).flatMap((g) => (g.visibility_conditions as Row[]) ?? []);
+      const shown = conds.map((c) => {
+        const on = fieldById.get(Number(c.lookup_field_id));
+        const val = c.lookup_value || ((on?.values as Row[]) ?? []).find((v) => Number(v.id) === Number(c.lookup_value_id))?.name || c.lookup_value_id;
+        return `${on?.label ?? `field ${c.lookup_field_id}`} is "${val}"`;
+      }).join(' or ');
+      return {
+        ...(section ? { section } : {}),
+        label: String(f.label ?? (row.fieldinfo as Row)?.label ?? f.name ?? `field ${row.fieldid}`),
+        type,
+        required: mandatoryMark(row) === '*',
+        ...(options.length ? { options } : {}),
+        ...(help ? { help } : {}),
+        ...(shown ? { shown_when: shown } : {}),
+      };
+    };
+    const forms: Record<string, unknown> = {};
+    for (const d of ttDetails) {
+      const rows: unknown[] = [];
+      for (const row of (d.fields as Row[]) ?? []) {
+        const g = row.group as Row | undefined;
+        if (Number(row.groupid) > 0 && g) for (const f of (g.fields as Row[]) ?? []) rows.push(rowOf(f, String(g.name)));
+        else if (Number(row.fieldid) > 0) rows.push(rowOf(row));
+      }
+      forms[nameOf(d)] = { team: d.default_team || undefined, workflow: d.workflow_name || undefined, approval: d.approval_process_name || undefined, sla: slaName.get(Number(d.default_sla)), visible: d.visible !== false, rows };
+    }
+    const ttName = new Map(ticketTypes.map((t) => [Number(t.id), nameOf(t)]));
+    const cats = await pool(await list('ServiceCategory').catch(() => [] as Row[]), (c) => get('ServiceCategory', c.id));
+    const byId = new Map(cats.map((c) => [Number(c.id), c]));
+    const pathOf = (c: Row | undefined, depth = 0): string => {
+      if (!c) return '(no category)';
+      const up = byId.get(Number(c.parent_id ?? 0));
+      return up && depth < 8 ? `${pathOf(up, depth + 1)} > ${nameOf(c).trim()}` : nameOf(c).trim();
+    };
+    const everyone = (c: Row) => ((c.group_user_access as Row[]) ?? []).some((g) => ((g.user_access as Row[]) ?? []).some((u) => u.type === 'X'));
+    const services = await pool(await list('Service').catch(() => [] as Row[]), (sv) => get('Service', sv.id));
+    const portal = cats.map((c) => ({
+      path: pathOf(c),
+      summary: String(c.summary ?? '').trim() || undefined,
+      everyone: everyone(c),
+      services: services.filter((sv) => Number(sv.service_category_id) === Number(c.id)).map((sv) => ({
+        name: nameOf(sv),
+        on_portal: !!sv.showinusercatalog,
+        logs: [...new Set([Number(sv.service_tickettype_id), ...((sv.service_request_details as Row[]) ?? []).map((r) => Number(r.tickettype_id ?? r.service_tickettype_id))].filter((n) => n > 0).map((n) => ttName.get(n) ?? `ticket type ${n}`))],
+      })),
+    })).sort((a, b) => a.path.localeCompare(b.path));
+    const uncategorised = services.filter((sv) => !byId.has(Number(sv.service_category_id))).map((sv) => ({ name: nameOf(sv), on_portal: !!sv.showinusercatalog }));
+    report = { forms, portal, uncategorised_services: uncategorised, ticket_categories: (await list('Category').catch(() => [] as Row[])).map(nameOf).sort() };
+  } catch (e) {
+    say(`as-built detail skipped: ${(e as Error).message}`);
+  }
+
   return {
     ...inventory,
+    ...(report ? { report } : {}),
     details: {
       note: 'A * after a field name means mandatory.',
       ticket_types,

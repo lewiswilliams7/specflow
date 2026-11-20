@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PrintButton } from '@/components/PrintButton';
+import { WordButton } from '@/components/WordButton';
 import { fieldLabel, type Inv } from '@/lib/specflow/describe';
 import { site } from '@/lib/site';
 import { getContext } from '@/lib/workspace';
@@ -21,7 +22,14 @@ type Details = {
   approval_processes?: Record<string, string[]>;
   sla_targets?: Record<string, string>;
 };
-type Inventory = Record<string, unknown> & { details?: Details };
+type FormRow = { section?: string; label: string; type: string; required: boolean; options?: string[]; help?: string; shown_when?: string };
+type Report = {
+  forms?: Record<string, { team?: string; workflow?: string; approval?: string; sla?: string; visible?: boolean; rows?: FormRow[] }>;
+  portal?: { path: string; summary?: string; everyone?: boolean; services: { name: string; on_portal: boolean; logs: string[] }[] }[];
+  uncategorised_services?: { name: string; on_portal: boolean }[];
+  ticket_categories?: string[];
+};
+type Inventory = Record<string, unknown> & { details?: Details; report?: Report };
 
 const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short' }) : '');
 const names = (inv: Inventory, key: string) => (Array.isArray(inv[key]) ? (inv[key] as string[]).filter(Boolean) : []);
@@ -58,6 +66,10 @@ export default async function AsBuiltPage({ params }: { params: Promise<{ id: st
   const types = Object.entries(d.ticket_types ?? {}).sort(([a], [b]) => a.localeCompare(b));
   const fields = Object.entries(d.custom_fields ?? {}).sort(([, a], [, b]) => a.localeCompare(b));
   const flows = Object.entries(d.workflow_actions_by_stage ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  const rep = inv.report;
+  // The forms people can actually reach: logged by a service that is on the portal.
+  const onPortal = new Set((rep?.portal ?? []).flatMap((c) => c.services.filter((sv) => sv.on_portal).flatMap((sv) => sv.logs)));
+  const portalForms = Object.entries(rep?.forms ?? {}).filter(([n]) => onPortal.has(n)).sort(([a], [b]) => a.localeCompare(b));
   const lists: [string, string][] = [
     ['Services', 'services'], ['Service categories', 'service_categories'], ['Organisations', 'organisations'], ['Sites', 'sites'],
     ['Working hours', 'working_hours'], ['Categories', 'categories'], ['Statuses', 'statuses'], ['Ticket rules', 'ticket_rules'],
@@ -79,6 +91,7 @@ export default async function AsBuiltPage({ params }: { params: Promise<{ id: st
     <div className="page report-page">
       <div className="report-tools no-print">
         <Link className="btn btn-quiet btn-sm" href={`/app/instances/${inst.id}`}>Back to {inst.name}</Link>
+        <WordButton fileName={`${org} Halo as built`} />
         <PrintButton />
       </div>
       <article className="report" style={colour ? ({ '--report-accent': colour, '--report-on-accent': textOn(colour) } as React.CSSProperties) : undefined}>
@@ -100,6 +113,68 @@ export default async function AsBuiltPage({ params }: { params: Promise<{ id: st
           <div><dt>Workflows</dt><dd>{flows.length}</dd></div>
         </dl>
         <p className="report-note">This is the configuration exactly as Halo reported it when {site.name} last read the instance. Read it again before printing if anything has changed since.</p>
+
+        {rep ? (
+          <>
+            <section>
+              <h2>Self-service portal</h2>
+              <p className="muted">Every portal category, top level first, with the text under it, who can see it and the services inside it.</p>
+              <table className="report-table">
+                <thead><tr><th>Category</th><th>Summary</th><th>Who sees it</th><th>Services (the form each one logs)</th></tr></thead>
+                <tbody>
+                  {(rep.portal ?? []).map((c) => (
+                    <tr key={c.path}>
+                      <td><b>{c.path}</b></td>
+                      <td>{c.summary ?? <span className="muted">none</span>}</td>
+                      <td>{c.everyone ? 'Everyone' : 'Restricted'}</td>
+                      <td>
+                        {c.services.length ? c.services.map((sv) => (
+                          <div key={sv.name}>{sv.name}{sv.logs.length ? ` → ${sv.logs.join(', ')}` : ' → no form'}{sv.on_portal ? '' : ' (hidden)'}</div>
+                        )) : <span className="muted">no services</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {rep.uncategorised_services?.length ? <p className="muted">Services in no category: {rep.uncategorised_services.map((x) => x.name).join(', ')}</p> : null}
+            </section>
+
+            <section>
+              <h2>Forms on the portal, field by field</h2>
+              <p className="muted">Each form a visible portal service logs. Fields in the order Halo shows them; a section name marks fields inside a shared section.</p>
+              {portalForms.map(([n, f]) => (
+                <div key={n} className="report-form">
+                  <h3>{n}</h3>
+                  <p className="muted">Team {f.team ?? 'not set'} · workflow {f.workflow ?? 'not set'} · approval {f.approval ?? 'none'}{f.sla ? ` · SLA ${f.sla}` : ''}</p>
+                  <table className="report-table">
+                    <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Options</th><th>Help text</th><th>Shown when</th></tr></thead>
+                    <tbody>
+                      {(f.rows ?? []).map((r, i) => (
+                        <tr key={`${n}-${i}`}>
+                          <td>{r.label}{r.section ? <div className="muted">in {r.section}</div> : null}</td>
+                          <td>{r.type}</td>
+                          <td>{r.required ? (r.shown_when ? 'Yes, when shown' : 'Yes') : 'No'}</td>
+                          <td>{r.options?.join('; ')}</td>
+                          <td>{r.help}</td>
+                          <td>{r.shown_when ?? 'Always'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </section>
+
+            <section>
+              <h2>Ticket categories</h2>
+              <ul className="report-list">
+                {(rep.ticket_categories ?? []).map((c) => <li key={c}>{c.split('>').map((x) => x.trim()).join(' › ')}</li>)}
+              </ul>
+            </section>
+          </>
+        ) : (
+          <p className="report-note no-print">Read {inst.name} again to add the portal, each form field by field, and the ticket categories to this document.</p>
+        )}
 
         <section>
           <h2>Ticket types</h2>
