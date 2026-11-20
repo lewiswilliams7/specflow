@@ -1875,13 +1875,22 @@ export const translators: Record<PlanStep['object'], Translator> = {
         else {
           const rows = layoutRows(cur, st.layout === 'standard' ? L.standard : st.layout.tabs, warn);
           const shown = new Set(rows.filter((r) => Number(r.display) === 1).map((r) => Number(r.tab_id)));
-          const formRows = ((out[m.fields as string] ?? current[m.fields as string]) as Row[] | undefined) ?? [];
-          const infoOf = (fr: Row) => (fr.fieldinfo as Row | undefined) ?? ((((current[m.fields as string] as Row[]) ?? []).find((c) => String(c.fieldid) === String(fr.fieldid))?.fieldinfo as Row | undefined) ?? {});
+          // A form field whose own tab this layout hides would vanish for agents: move it to Additional Fields on this
+          // form (row tab 0) and say so (20 Nov Compleat: Site / Location sat on custom tab 101). Never blocks.
+          const fkey = m.fields as string;
+          const formRows = (out[fkey] as Row[] | undefined) ?? keepRows(current[fkey]);
+          const infoOf = (fr: Row) => ((((current[fkey] as Row[]) ?? []).find((c) => String(c.fieldid) === String(fr.fieldid))?.fieldinfo as Row | undefined) ?? {});
+          const rowTab = SPIKE_MAP.placement.rowTab ?? 'techtab_id';
+          let moved = 0;
           for (const fr of formRows) {
-            const tab = Number(fr.techtab_id ?? -1) >= 0 ? Number(fr.techtab_id) : Number(infoOf(fr).tab_id ?? -1);
-            if (tab >= 0 && tab !== L.additionalTabId && cur.some((r) => Number(r.tab_id) === tab) && !shown.has(tab))
-              warn(`layout: field ${infoOf(fr).label ?? fr.fieldid} sits on tab ${tab}, which this layout hides (place it with place_fields)`);
+            const tab = Number(fr[rowTab] ?? -1) >= 0 ? Number(fr[rowTab]) : Number(infoOf(fr).tab_id ?? -1);
+            if (tab >= 0 && tab !== L.additionalTabId && cur.some((r) => Number(r.tab_id) === tab) && !shown.has(tab)) {
+              fr[rowTab] = L.additionalTabId;
+              moved++;
+              warn(`note: ${infoOf(fr).label ?? fr.fieldid} was on a tab this layout hides, so it moves to Additional Fields on this form`);
+            }
           }
+          if (moved) out[fkey] = formRows;
           out[L.config] = rows;
           if (Number(current[L.mode]) !== 1) out[L.mode] = 1;
         }
