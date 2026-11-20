@@ -60,6 +60,9 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 42 (20 Nov): field types Enact doesn't know (Attachment, Table): read Halo's own fields of each unknown type, and
+ * make one "zz Enact r42 type N" field per candidate number, copied from Halo's own text field, for Lewis to identify.
+ *
  * Shared with the app (scripts/sync-builder.mjs): uses only runtime().halo. The CALLER checks the trial-only switches.
  * Never deletes.
  */
@@ -70,7 +73,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 41;
+export const ROUND = 42;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -272,22 +275,36 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('everyone', async () => {
-    const A = 'everyone';
-    // Halo's own shape (category 8, service 122), without its ids, so Halo makes new ones.
-    const everyone = [{ type: 4, desc: 'Restriction Group 1', seq: 1, allow_access: true, user_access: [{ type: 'X', data_id: 0, data_name: '', allow_access: true, data_string: '' }] }];
-    const sub = (await list('ServiceCategory')).rows.find((c) => nameOf(c) === 'zz Enact r36 subcategory');
-    const svc = (await list('Service')).rows.find((r) => nameOf(r) === 'zz Enact r30 service');
-    for (const [ep, rec, label] of [['ServiceCategory', sub, 'zz category 26'], ['Service', svc, 'zz service 170']] as const) {
-      if (!rec) { note(A, `${label} skipped`, 'missing'); continue; }
-      note(A, `${label} before`, pick(await detail(ep, rec.id), /^(access_control_level|group_user_access)$/));
-      if (!apply) continue;
-      try {
-        await runtime().halo.post(`/${ep}`, [{ id: Number(rec.id), group_user_access: everyone }]);
-        note(A, `${label} after`, pick(await detail(ep, rec.id), /^(access_control_level|group_user_access)$/));
-      } catch (e) { note(A, `${label} error`, err(e)); }
+  await area('field types', async () => {
+    const A = 'field types';
+    // Round 42 (20 Nov): Halo has an "Attachment" field type (a file upload on the portal form, read-only after logging)
+    // and table fields (Compleat's "Other permanent pay/deduction elements" read back as type 7). Enact knows types
+    // 0 1 2 3 4 6 10. (1) Halo's own fields, grouped by type: the settings one field of each unknown type uses.
+    const KNOWN = new Set([0, 1, 2, 3, 4, 6, 10]);
+    const fields = (await list('FieldInfo')).rows;
+    const byType = new Map<number, Row[]>();
+    for (const f of fields) byType.set(Number(f.type), [...(byType.get(Number(f.type)) ?? []), f]);
+    note(A, 'types in use', Object.fromEntries([...byType].map(([t, rs]) => [t, `${rs.length}: ${rs.slice(0, 4).map((r) => `${r.id} ${nameOf(r)}`).join(', ')}`])));
+    for (const [t, rs] of byType) {
+      if (KNOWN.has(t)) continue;
+      const own1 = rs.find(own);
+      if (!own1) continue;
+      note(A, `type ${t}: ${own1.id} ${nameOf(own1)}`, settings(await detail('FieldInfo', own1.id)));
     }
-    summary.push('· everyone: in Halo open the service category "zz Enact r36 subcategory" and the service "zz Enact r30 service" and check User Access says Everyone');
+    // (2) One sample per candidate type number, copied from Halo's own text field with only name, label and type
+    // changed (template from a real record, never a guess). Lewis opens them and says which shows as Attachment / Table.
+    const textField = fields.find((f) => Number(f.type) === 0 && own(f));
+    if (!textField) { note(A, 'samples skipped', 'no text field to copy'); return; }
+    const base = cleanForCreate(await detail('FieldInfo', textField.id)) as Row;
+    for (const k of ['values', 'id', 'guid']) delete base[k];
+    const made: Row = {};
+    for (const t of [5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
+      if (KNOWN.has(t)) continue;
+      const id = await create(A, `type ${t}`, 'FieldInfo', { ...base, name: `zzEnactR42Type${t}`, label: `zz Enact r42 type ${t}`, type: t });
+      if (id) made[t] = pick(await detail('FieldInfo', id), /^(id|name|label|type|typename|type_name|inputtype|input_type|.*attach.*|.*table.*|.*column.*)$/i);
+    }
+    note(A, 'samples made', made);
+    summary.push('· field types: in Halo, Configuration > Custom Fields, open each "zz Enact r42 type N" field and note the "Type of Field" it shows (e.g. type 15 = Attachment). Tell Claude which number is Attachment and which is Table.');
   });
 
   return { out, summary };
