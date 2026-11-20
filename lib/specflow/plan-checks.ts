@@ -422,7 +422,9 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     const key = (xs: PlanStep[]) => JSON.stringify([...xs].sort((a, b) => a.id.localeCompare(b.id)));
     const unchanged = key(ctx.previousSteps) === key(steps);
     const claims = /\b(i['’]ll|i will|i['’]ve|i have|now|will)\b[^.]*\b(add|adding|make|making|set|setting|change|changing|switch|move|remove|drop|create|rename|update|put|mark)\b/i;
-    const denies = /\b(nothing|no change|no changes|unchanged|won['’]t change|not chang|no need)\b/i.test(plan.reply);
+    // A reply confirming what the plan already does is not a broken promise (20 Nov, Compleat: "Confirmed — I'll switch
+    // those eight types to the ootb workflow", which the plan already did).
+    const denies = /\b(nothing|no change|no changes|unchanged|won['’]t change|not chang|no need|confirm(ed|ing)?|already|as planned|still)\b/i.test(plan.reply);
     if (unchanged && !denies && claims.test(plan.reply))
       errors.push(`"reply" says "${plan.reply}", but the plan's steps are unchanged. Make that change in upsert_steps (for example field_mandatory on the form or section that holds the field), or if it can't be done, say so plainly in reply and keep the plan as it is.`);
   }
