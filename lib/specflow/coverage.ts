@@ -13,10 +13,13 @@ type BriefForm = { title: string; ticketType?: string; fields: BriefField[] };
 const norm = (t: string) => t.toLowerCase().replace(/^zz\s+(s\w+|enact test)\s+/, '').replace(/[^a-z0-9]/g, '');
 // Same word stems as the builder's F8 ("Start Date" ~ "Starting Date"), so the check agrees with what the build reuses.
 const stem = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w.replace(/(ing|ed|s)$/, '')).join('');
+// The same words apart from small ones ("Will employee move…" ~ "Will the employee move…").
+const SMALL = new Set(['the', 'a', 'an', 'of', 'to', 'for', 'is', 'this', 'your', 'you', 'are', 'be']);
+const words = (t: string) => [...new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w && !SMALL.has(w)).map((w) => w.replace(/(ing|ed|s)$/, '')))].sort().join(' ');
 const sameLabel = (a: string, b: string) => {
   const x = norm(a), y = norm(b);
   if (!x || !y) return false;
-  if (x === y || stem(a) === stem(b)) return true;
+  if (x === y || stem(a) === stem(b) || (words(a) && words(a) === words(b))) return true;
   // "Department / Team" and "Department" are the same field; "Other requester type" and "Requester type" aren't.
   const [short, long] = x.length < y.length ? [x, y] : [y, x];
   return short.length >= 5 && long.includes(short) && short.length / long.length >= 0.6 && !/other|details|reason|justification/.test(long.replace(short, ''));
@@ -36,8 +39,9 @@ function readField(line: string): BriefField | null {
   const help = rest.match(/Help text:\s*"([^"]*)"/i)?.[1] ?? head.match(/\(([^()]{3,})\)\s*\.?\s*$/)?.[1];
   const rules: BriefField['rules'] = [];
   // "If 'Other' selected → show fields: A and B" (design sheets)
-  for (const r of rest.matchAll(/If\s+'([^']+)'(?:\s+or\s+'([^']+)')?\s+(?:is\s+)?(?:selected|picked|chosen)\s*→\s*show\s+fields?:\s*([^/]+)/gi)) {
-    const show = r[3].split(/\.\s|Help text/i)[0].replace(/\([^)]*\)/g, '').split(/,|\band\b/).map((x) => x.trim().replace(/\.$/, '')).filter(Boolean);
+  // Rules are separated by " / "; a "/" inside a label ("New High/Low Risk") is not a separator (20 Nov).
+  for (const r of rest.matchAll(/If\s+'([^']+)'(?:\s+or\s+'([^']+)')?\s+(?:is\s+)?(?:selected|picked|chosen)\s*→\s*show\s+fields?:\s*((?:(?!\s\/\s).)+)/gi)) {
+    const show = r[3].split(/\.\s|Help text/i)[0].replace(/\([^)]*\)/g, '').split(/,|\band\b/).map((x) => x.trim().replace(/\.$/, '').trim()).filter(Boolean);
     for (const v of [r[1], r[2]].filter(Boolean) as string[]) rules.push({ value: v, show });
   }
   // "If Other is picked, show Other Equipment Details, memo, required." / 'If Yes, show "Admin Justification"'
@@ -113,7 +117,9 @@ export function coverageErrors(plan: Plan, request: string, customFields: Record
     ];
     const rules = tts.flatMap((t) => t.set?.show_field_when ?? []);
     // Anything the plan already explains under "can't do yet" is accounted for.
-    const explained = (t: string) => (plan.unsupported ?? []).some((u) => norm(u).includes(norm(t)));
+    // Explained when the plan says what it did with it: in unsupported, or in an assumption that maps it to a field
+    // already there under another label ("Date change effective from" is the existing "Start Date:", 20 Nov).
+    const explained = (t: string) => [...(plan.unsupported ?? []), ...(plan.assumptions ?? [])].some((u) => norm(u).includes(norm(t)));
     for (const f of form.fields) {
       if (!onForm.some((l) => sameLabel(l, f.label)) && !explained(f.label)) errors.push(`"${typeName}": the brief lists the field "${f.label}" but the plan doesn't put it on this form (rule M24). Add it, or say in unsupported why not.`);
       for (const r of f.rules) for (const target of r.show) {
