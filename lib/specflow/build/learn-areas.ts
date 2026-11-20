@@ -60,6 +60,8 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 44 (20 Nov): attachment proof again (client side uploads must be on), the uploads setting key (read-only),
+ * and layout: object keys, query params, tab endpoints, tab_display 1 on the zz form, form row placement values.
  * Round 43 (20 Nov): attachment fields (type 11) proven on the zz form, and round 42b's layout read (it didn't run).
  * Round 42b: where Halo keeps a ticket type's layout tabs and a field's tab (Details / Additional Fields / Ticket
  * Information), read-only.
@@ -76,7 +78,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 43;
+export const ROUND = 44;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -303,40 +305,73 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     summary.push('· attachment: on the trial portal, raise a "zz Enact r36 form" ticket, attach a file in "zz Enact r43 upload", then open the ticket as an agent and check the file is there');
   });
 
+  await area('uploads setting', async () => {
+    const A = 'uploads setting';
+    // Round 44 (20 Nov): round 43's attachment field was still refused ("Must enable client side uploads"). Find the
+    // instance setting so Enact can check it before planning an attachment field. Read-only: Enact never changes it.
+    const UP = /upload|clientside|client_side|s3|blob|storage/i;
+    for (const ep of ['Config', 'Setup', 'Configuration', 'Settings']) {
+      const r = await list(ep);
+      if (r.error) { note(A, `${ep}: error`, r.error.slice(0, 160)); continue; }
+      let rec: Row | null = r.rows[0] ?? null;
+      if (!rec) { try { rec = firstRecord(await runtime().halo.get(`/${ep}`)); } catch { rec = null; } }
+      if (!rec) { note(A, `${ep}`, 'no record'); continue; }
+      note(A, `${ep}: key count`, Object.keys(rec).length);
+      note(A, `${ep}: upload keys`, Object.fromEntries(Object.entries(rec).filter(([k, v]) => UP.test(k) && typeof v !== 'object')));
+    }
+  });
+
   await area('layout', async () => {
     const A = 'layout';
-    // Round 42b (20 Nov): Lewis wants every ticket type on a custom layout showing only Progress, Attachments, Additional
-    // Fields, View Log, Notification Log and Details, and each field placed on Details, Additional Fields or Ticket
-    // Information. Read where Halo keeps both, from Halo's own records. Read-only.
-    const LAYOUT = /tab|layout|section|panel|display|view|_show|show_|hide|visible_|progress|notification|log|additional|attachment|details/i;
+    // Round 44 (20 Nov): round 43 found no layout list in a ticket type's detail; only tab_display varies (0 on most,
+    // 1 on Change Request and Major Incident). Now: (1) every object/array key on a type with tab_display 1 and one with 0;
+    // (2) extra keys other query params bring back; (3) candidate tab endpoints; (4) one change on the zz form,
+    // tab_display 1, with a full before/after diff; (5) form row placement values across Halo's own types.
     const types = (await list('TicketType')).rows.filter(own);
-    const seen: Record<string, Set<string>> = {};
-    for (const t of types.slice(0, 12)) {
+    const shape = (d: Row | null) => Object.fromEntries(Object.entries(d ?? {}).filter(([, v]) => v && typeof v === 'object').map(([k, v]) => [k, Array.isArray(v) ? `array(${v.length})${v[0] && typeof v[0] === 'object' ? ' keys: ' + Object.keys(v[0]).slice(0, 25).join(',') : ''}` : `object keys: ${Object.keys(v as Row).slice(0, 25).join(',')}`]));
+    const one = types.find((t) => Number(t.id) === 2) ?? types[0];
+    const zero = types.find((t) => Number(t.id) === 1) ?? types[1];
+    const dOne = one ? await detail('TicketType', one.id) : null;
+    const dZero = zero ? await detail('TicketType', zero.id) : null;
+    note(A, `objects on ${one?.id} ${nameOf(one ?? {})} (tab_display ${dOne?.tab_display})`, shape(dOne));
+    note(A, `objects on ${zero?.id} ${nameOf(zero ?? {})} (tab_display ${dZero?.tab_display})`, shape(dZero));
+    const onlyOne = Object.keys(dOne ?? {}).filter((k) => !(k in (dZero ?? {})));
+    note(A, 'keys only on the tab_display 1 type', Object.fromEntries(onlyOne.map((k) => [k, short(dOne?.[k])])));
+    if (one) {
+      const extra: Row = {};
+      for (const p of ['includeconfig', 'includetabs', 'includelayout', 'includeagentlayout', 'includecustomtabs', 'includeall']) {
+        try {
+          const d = firstRecord(await runtime().halo.get(`/TicketType/${one.id}`, { includedetails: 'true', [p]: 'true' }));
+          const added = Object.keys(d ?? {}).filter((k) => !(k in (dOne ?? {})));
+          extra[p] = added.length ? Object.fromEntries(added.map((k) => [k, short(d?.[k])])) : 'nothing extra';
+        } catch (e) { extra[p] = `error: ${err(e).slice(0, 120)}`; }
+      }
+      note(A, 'extra keys per query param', extra);
+    }
+    await discover(A, 'tab endpoints', ['TicketTypeTab', 'TicketTab', 'CustomTab', 'TabConfig', 'Tabs', 'TicketTypeLayout', 'Layout', 'TicketDetailsTab'], one ? { tickettype_id: String(one.id) } : undefined);
+    // One change on the zz form: tab_display 1. Full diff of everything Halo returns, so any layout list it adds shows.
+    const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
+    if (form && apply) {
+      const before = await detail('TicketType', form.id);
+      await update(A, 'zz form tab_display 1', 'TicketType', Number(form.id), { tab_display: 1 });
+      const after = await detail('TicketType', form.id);
+      const changed = Object.keys({ ...before, ...after }).filter((k) => JSON.stringify(before?.[k]) !== JSON.stringify(after?.[k]));
+      note(A, 'zz form: everything that changed', Object.fromEntries(changed.map((k) => [k, { before: short(before?.[k]), after: short(after?.[k]) }])));
+      summary.push('· layout: open the "zz Enact r36 form" ticket type in Halo and tell Claude what its layout setting shows now (Enact set tab_display to 1 on it)');
+    }
+    // Per-form placement: values of the row keys across Halo's own types.
+    const rowVals: Record<string, Record<string, number>> = {};
+    let rowKeys: string[] = [];
+    for (const t of types.slice(0, 15)) {
       const d = await detail('TicketType', t.id);
-      if (!d) continue;
-      const hit = Object.fromEntries(Object.entries(d).filter(([k, v]) => LAYOUT.test(k) && typeof v !== 'object'));
-      for (const [k, v] of Object.entries(hit)) (seen[k] ??= new Set()).add(JSON.stringify(v));
-      const objs = Object.fromEntries(Object.entries(d).filter(([k, v]) => LAYOUT.test(k) && v && typeof v === 'object').map(([k, v]) => [k, short(v)]));
-      note(A, `ticket type ${t.id} ${nameOf(t)}`, { ...hit, ...objs });
+      for (const r of ((d?.fields as Row[]) ?? [])) {
+        if (!rowKeys.length) rowKeys = Object.keys(r);
+        for (const k of ['techtab_id', 'techtab_name', 'technewlocation', 'tableid', 'usertab_id', 'section_id', 'groupid']) if (k in r) ((rowVals[k] ??= {})[JSON.stringify(r[k])] = ((rowVals[k] ?? {})[JSON.stringify(r[k])] ?? 0) + 1);
+      }
     }
-    // Keys whose value differs between types are the switches worth testing next round.
-    note(A, 'ticket type keys that vary', Object.fromEntries(Object.entries(seen).filter(([, v]) => v.size > 1).map(([k, v]) => [k, [...v].slice(0, 6)])));
-    note(A, 'ticket type keys always the same', Object.fromEntries(Object.entries(seen).filter(([, v]) => v.size === 1).map(([k, v]) => [k, [...v][0]])));
-    // Where a field sits ("Tab" on the custom field screen), and whether a form row can override it.
-    const fields = (await list('FieldInfo')).rows.filter(own);
-    const tabs: Record<string, Record<string, number>> = {};
-    for (const f of fields.slice(0, 40)) {
-      const d = await detail('FieldInfo', f.id);
-      for (const [k, v] of Object.entries(d ?? {})) if (/tab|section|panel|position|location|display/i.test(k) && typeof v !== 'object') ((tabs[k] ??= {})[JSON.stringify(v)] = ((tabs[k] ?? {})[JSON.stringify(v)] ?? 0) + 1);
-    }
-    note(A, 'field keys for placement (value: how many fields)', tabs);
-    const withRows = types[0];
-    if (withRows) {
-      const d = await detail('TicketType', withRows.id);
-      const row = ((d?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) > 0);
-      if (row) note(A, 'a form row (placement keys)', Object.fromEntries(Object.entries(row).filter(([k]) => /tab|section|panel|position|location|display/i.test(k))));
-    }
-    summary.push('· layout: read only. Also tell Claude: on the trial, does any ticket type already use a Custom layout? If so, which one.');
+    note(A, 'form row keys', rowKeys);
+    note(A, 'form row placement values (value: rows)', rowVals);
+    summary.push('· layout: also tell Claude which of Change Request or Major Incident shows a Custom layout in Halo (both have tab_display 1)');
   });
 
   return { out, summary };
