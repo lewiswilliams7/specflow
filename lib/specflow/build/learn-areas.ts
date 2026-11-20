@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 50 (20 Nov): tab names from the ClientCache call's languagepack (label/value rows), read-only.
  * Round 49 (20 Nov): where the agent app fills its translations, and the addresses there, read-only.
  * Round 48 (20 Nov): the API the agent app loads its language text from (found in its main script), read-only.
  * Round 47 (20 Nov): built-in tab names from the agent app's own public files on the instance host, read-only.
@@ -85,7 +86,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 49;
+export const ROUND = 50;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -308,23 +309,38 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     const main = [...page.matchAll(/src=["']([^"']*index-[^"']+\.js)["']/g)].map((m) => m[1])[0] ?? '';
     const js = main ? await fetchText(main) : '';
     note(A, 'main script', `${main} ${js.length} chars`);
-    // Round 49: its() reads f.translations (or f.langOverride). Find where translations is filled, and the addresses near it.
-    const around = (re: RegExp, n = 8, width = 360) => [...js.matchAll(re)].slice(0, n).map((m) => js.slice(Math.max(0, (m.index ?? 0) - 200), (m.index ?? 0) + width));
-    const snips = [...around(/\.translations\s*=(?!=)/g), ...around(/\.langOverride\s*=(?!=)/g, 4), ...around(/languagepack/gi, 6)];
-    note(A, 'where translations is filled', snips);
-    const paths = new Set<string>();
-    for (const sn of snips) for (const m of sn.matchAll(/["'`]([^"'`\s]{3,80})["'`]/g)) if (/\/|lang|transl|json/i.test(m[1]) && !/^(https?:)?\/\/(?!.*usehalo)/.test(m[1])) paths.add(m[1]);
-    note(A, 'addresses near it', [...paths]);
-    const want = new RegExp(`["']?(${keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})["']?\\s*:\\s*["']([^"'\\n]{1,60})["']`, 'g');
+    // Round 50: round 49 showed the text is a languagepack { translations: [{ label, value }] } that the app gets with its
+    // "ClientCache" call (it logs "Issue with ClientCache" when that fails). Read the calls to ClientCache in the script,
+    // then GET /ClientCache with the params the script uses, and read label/value rows for the tab keys.
+    const around = (re: RegExp, n = 8, width = 360) => [...js.matchAll(re)].slice(0, n).map((m) => js.slice(Math.max(0, (m.index ?? 0) - 160), (m.index ?? 0) + width));
+    const calls = around(/["'`]ClientCache[^"'`]*["'`]/g, 8);
+    note(A, 'ClientCache calls in the script', calls);
+    const paramSets: Record<string, string>[] = [{}];
+    for (const c of calls) {
+      const obj = c.match(/ClientCache[^"'`]*["'`]\s*,\s*\{([^}]{0,300})\}/);
+      if (!obj) continue;
+      const ps: Record<string, string> = {};
+      for (const m of obj[1].matchAll(/([a-z_]+)\s*:\s*(!0|!1|"[^"]*"|\d+)/gi)) ps[m[1]] = m[2] === '!0' ? 'true' : m[2] === '!1' ? 'false' : m[2].replace(/"/g, '');
+      if (Object.keys(ps).length) paramSets.push(ps);
+    }
+    paramSets.push({ includetranslations: 'true' }, { languagepack: 'true' }, { translations: 'true' });
     const found: Record<string, string> = {};
     const tried: Row = {};
-    const take = (text: string) => { for (const m of text.matchAll(want)) if (!['appointments', 'items', 'tasks', 'charges'].includes(m[1])) found[m[1]] ??= m[2]; };
-    for (const p of keys.length ? [...paths].slice(0, 20) : []) {
-      const clean = p.replace(/\$\{[^}]*\}/g, '').replace(/^\/?api\//, '');
-      try { const t = JSON.stringify(await runtime().halo.get(`/${clean.replace(/^\//, '')}`)); const b = Object.keys(found).length; take(t); tried[`api ${clean}`] = `${t.length} chars, named ${Object.keys(found).length - b}`; }
-      catch (e) { tried[`api ${clean}`] = `error: ${err(e).slice(0, 60)}`; }
-      const t2 = await fetchText(clean.startsWith('/') ? clean : `/${clean}`);
-      if (t2) { const b = Object.keys(found).length; take(t2); tried[`file ${clean}`] = `${t2.length} chars, named ${Object.keys(found).length - b}`; }
+    const takeRows = (v: unknown, d = 0) => {
+      if (!v || typeof v !== 'object' || d > 5) return;
+      if (Array.isArray(v)) { for (const r of v) { const row = r as Row; if (row && typeof row === 'object' && keys.includes(String(row.label)) && typeof row.value === 'string') found[String(row.label)] ??= row.value as string; else takeRows(r, d + 1); } return; }
+      for (const x of Object.values(v as Row)) takeRows(x, d + 1);
+    };
+    for (const ps of paramSets.slice(0, 8)) {
+      const label = 'ClientCache?' + new URLSearchParams(ps).toString();
+      try {
+        const res = await runtime().halo.get('/ClientCache', ps);
+        const b = Object.keys(found).length;
+        takeRows(res);
+        const text = JSON.stringify(res);
+        tried[label] = `${text.length} chars, top keys: ${Object.keys((res as Row) ?? {}).slice(0, 15).join(',')}, named ${Object.keys(found).length - b}`;
+        if (Object.keys(found).length >= keys.length) break;
+      } catch (e) { tried[label] = `error: ${err(e).slice(0, 80)}`; }
     }
     note(A, 'paths tried', tried);
     note(A, 'names found', found);
