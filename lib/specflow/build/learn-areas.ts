@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 49 (20 Nov): where the agent app fills its translations, and the addresses there, read-only.
  * Round 48 (20 Nov): the API the agent app loads its language text from (found in its main script), read-only.
  * Round 47 (20 Nov): built-in tab names from the agent app's own public files on the instance host, read-only.
  * Round 46 (20 Nov): names for Halo's built-in tabs (translation keys in tab_config), read-only.
@@ -84,7 +85,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 48;
+export const ROUND = 49;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -307,48 +308,23 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     const main = [...page.matchAll(/src=["']([^"']*index-[^"']+\.js)["']/g)].map((m) => m[1])[0] ?? '';
     const js = main ? await fetchText(main) : '';
     note(A, 'main script', `${main} ${js.length} chars`);
-    // its() and how the language text is loaded.
-    const around = (re: RegExp, n = 6, width = 260) => [...js.matchAll(re)].slice(0, n).map((m) => js.slice(Math.max(0, (m.index ?? 0) - 60), (m.index ?? 0) + width));
-    note(A, 'its() definition', around(/\bits\s*\(\s*[a-zA-Z_$]+\s*,[^)]*\)\s*\{/g, 3, 400));
+    // Round 49: its() reads f.translations (or f.langOverride). Find where translations is filled, and the addresses near it.
+    const around = (re: RegExp, n = 8, width = 360) => [...js.matchAll(re)].slice(0, n).map((m) => js.slice(Math.max(0, (m.index ?? 0) - 200), (m.index ?? 0) + width));
+    const snips = [...around(/\.translations\s*=(?!=)/g), ...around(/\.langOverride\s*=(?!=)/g, 4), ...around(/languagepack/gi, 6)];
+    note(A, 'where translations is filled', snips);
     const paths = new Set<string>();
-    for (const m of js.matchAll(/["'`](\/?(?:api\/)?[A-Za-z]*(?:[Ll]anguage|[Tt]ranslat|[Ll]ocali[sz]|[Ss]trings|[Tt]erms)[A-Za-z0-9_\/]*)["'`?]/g)) {
-      const p = m[1].replace(/^\/?(api\/)?/, '');
-      if (p.length > 2 && p.length < 60 && !/\.(js|css|png|svg)$/.test(p)) paths.add(p);
-    }
-    note(A, 'language-like paths in the script', [...paths].slice(0, 40));
-    note(A, 'agentweb_152 in script', around(/agentweb_152\b/g, 3, 200));
+    for (const sn of snips) for (const m of sn.matchAll(/["'`]([^"'`\s]{3,80})["'`]/g)) if (/\/|lang|transl|json/i.test(m[1]) && !/^(https?:)?\/\/(?!.*usehalo)/.test(m[1])) paths.add(m[1]);
+    note(A, 'addresses near it', [...paths]);
     const want = new RegExp(`["']?(${keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})["']?\\s*:\\s*["']([^"'\\n]{1,60})["']`, 'g');
     const found: Record<string, string> = {};
     const tried: Row = {};
-    const scanJson = (v: unknown) => {
-      // Shapes seen elsewhere in Halo: { key: text } or rows like { name|key|id: key, value|text|translation: text }.
-      const walk = (x: unknown, d = 0) => {
-        if (!x || typeof x !== 'object' || d > 6) return;
-        const r = x as Row;
-        for (const [k, val] of Object.entries(r)) {
-          if (keys.includes(k) && typeof val === 'string') found[k] ??= val;
-          if (typeof val === 'string' && keys.includes(val)) {
-            const text = Object.entries(r).find(([kk, vv]) => kk !== k && typeof vv === 'string' && !keys.includes(vv as string) && /value|text|transl|desc|name/i.test(kk));
-            if (text) found[val] ??= String(text[1]);
-          }
-          if (val && typeof val === 'object') walk(val, d + 1);
-        }
-      };
-      walk(v);
-    };
-    for (const p of keys.length ? [...paths].slice(0, 25) : []) {
-      for (const params of [undefined, { language_id: '1' }, { lang: 'en' }] as (Record<string, string> | undefined)[]) {
-        const label = p + (params ? '?' + new URLSearchParams(params).toString() : '');
-        try {
-          const res = await runtime().halo.get(`/${p}`, params);
-          const text = JSON.stringify(res);
-          const before = Object.keys(found).length;
-          scanJson(res);
-          for (const m of text.matchAll(want)) found[m[1]] ??= m[2];
-          tried[label] = `${text.length} chars${text.includes('agentweb_') ? ', has agentweb keys' : ''}, named ${Object.keys(found).length - before}`;
-          break;
-        } catch (e) { tried[label] = `error: ${err(e).slice(0, 80)}`; }
-      }
+    const take = (text: string) => { for (const m of text.matchAll(want)) if (!['appointments', 'items', 'tasks', 'charges'].includes(m[1])) found[m[1]] ??= m[2]; };
+    for (const p of keys.length ? [...paths].slice(0, 20) : []) {
+      const clean = p.replace(/\$\{[^}]*\}/g, '').replace(/^\/?api\//, '');
+      try { const t = JSON.stringify(await runtime().halo.get(`/${clean.replace(/^\//, '')}`)); const b = Object.keys(found).length; take(t); tried[`api ${clean}`] = `${t.length} chars, named ${Object.keys(found).length - b}`; }
+      catch (e) { tried[`api ${clean}`] = `error: ${err(e).slice(0, 60)}`; }
+      const t2 = await fetchText(clean.startsWith('/') ? clean : `/${clean}`);
+      if (t2) { const b = Object.keys(found).length; take(t2); tried[`file ${clean}`] = `${t2.length} chars, named ${Object.keys(found).length - b}`; }
     }
     note(A, 'paths tried', tried);
     note(A, 'names found', found);
