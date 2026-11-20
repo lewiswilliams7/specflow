@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 43 (20 Nov): attachment fields (type 11) proven on the zz form, and round 42b's layout read (it didn't run).
  * Round 42b: where Halo keeps a ticket type's layout tabs and a field's tab (Details / Additional Fields / Ticket
  * Information), read-only.
  * Round 42 (20 Nov): field types Enact doesn't know (Attachment, Table): read Halo's own fields of each unknown type, and
@@ -75,7 +76,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 42;
+export const ROUND = 43;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -277,36 +278,29 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('field types', async () => {
-    const A = 'field types';
-    // Round 42 (20 Nov): Halo has an "Attachment" field type (a file upload on the portal form, read-only after logging)
-    // and table fields (Compleat's "Other permanent pay/deduction elements" read back as type 7). Enact knows types
-    // 0 1 2 3 4 6 10. (1) Halo's own fields, grouped by type: the settings one field of each unknown type uses.
-    const KNOWN = new Set([0, 1, 2, 3, 4, 6, 10]);
+  await area('attachment field', async () => {
+    const A = 'attachment field';
+    // Round 43 (20 Nov): round 42 showed type 11 is Attachment, refused until "client side uploads" is on. Lewis switches
+    // that on in the trial first. Then (1) make one attachment field from Halo's own text field (type changed only),
+    // read it back; (2) prove the builder makes one and puts it on the zz form; Lewis uploads a file on the portal.
     const fields = (await list('FieldInfo')).rows;
-    const byType = new Map<number, Row[]>();
-    for (const f of fields) byType.set(Number(f.type), [...(byType.get(Number(f.type)) ?? []), f]);
-    note(A, 'types in use', Object.fromEntries([...byType].map(([t, rs]) => [t, `${rs.length}: ${rs.slice(0, 4).map((r) => `${r.id} ${nameOf(r)}`).join(', ')}`])));
-    for (const [t, rs] of byType) {
-      if (KNOWN.has(t)) continue;
-      const own1 = rs.find(own);
-      if (!own1) continue;
-      note(A, `type ${t}: ${own1.id} ${nameOf(own1)}`, settings(await detail('FieldInfo', own1.id)));
+    const textField = fields.find((f) => Number(f.type) === 0 && own(f) && !/TOM|Accountable/i.test(nameOf(f)));
+    if (textField) {
+      const base = cleanForCreate(await detail('FieldInfo', textField.id)) as Row;
+      for (const k of ['values', 'id', 'guid']) delete base[k];
+      const id = await create(A, 'type 11 sample', 'FieldInfo', { ...base, name: 'zzEnactR43Attachment', label: 'zz Enact r43 attachment', type: 11 });
+      if (id) note(A, 'type 11 read back', settings(await detail('FieldInfo', id)));
     }
-    // (2) One sample per candidate type number, copied from Halo's own text field with only name, label and type
-    // changed (template from a real record, never a guess). Lewis opens them and says which shows as Attachment / Table.
-    const textField = fields.find((f) => Number(f.type) === 0 && own(f));
-    if (!textField) { note(A, 'samples skipped', 'no text field to copy'); return; }
-    const base = cleanForCreate(await detail('FieldInfo', textField.id)) as Row;
-    for (const k of ['values', 'id', 'guid']) delete base[k];
-    const made: Row = {};
-    for (const t of [5, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) {
-      if (KNOWN.has(t)) continue;
-      const id = await create(A, `type ${t}`, 'FieldInfo', { ...base, name: `zzEnactR42Type${t}`, label: `zz Enact r42 type ${t}`, type: t });
-      if (id) made[t] = pick(await detail('FieldInfo', id), /^(id|name|label|type|typename|type_name|inputtype|input_type|.*attach.*|.*table.*|.*column.*)$/i);
-    }
-    note(A, 'samples made', made);
-    summary.push('· field types: in Halo, Configuration > Custom Fields, open each "zz Enact r42 type N" field and note the "Type of Field" it shows (e.g. type 15 = Attachment). Tell Claude which number is Attachment and which is Table.');
+    const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
+    if (!form) { note(A, 'proof skipped', 'no "zz Enact r36 form" ticket type'); return; }
+    await prove('attachment field on a form', {
+      summary: 'Round 43: an attachment field on the sample form',
+      steps: [
+        { id: 'up', object: 'field', action: 'create', name: 'zzEnactR43Upload', label: 'zz Enact r43 upload', type: 'attachment' },
+        { id: 'tt', object: 'ticket_type', action: 'update', match: { name: nameOf(form) }, set: { add_fields: [{ ref: 'up' }] } },
+      ],
+    } as unknown as Plan);
+    summary.push('· attachment: on the trial portal, raise a "zz Enact r36 form" ticket, attach a file in "zz Enact r43 upload", then open the ticket as an agent and check the file is there');
   });
 
   await area('layout', async () => {

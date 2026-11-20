@@ -26,6 +26,12 @@ export const SPIKE_MAP = {
     /** Round 38: Halo's own rich text fields are type 10 (CFBridgeDescriptionRich 267, fchangeinformationhtml -82).
      *  Built by the builder in round 39. */
     richtext: 10,
+    /** Round 42 (20 Nov, Concord): Halo refused type 11 with "Must enable client side uploads to use attachment custom
+     *  fields" (rule F15). Built only once round 43 proves it on a form. */
+    attachment: 11,
+    /** Round 42: type 7 needs a custom table ("A table must be selected"; Halo's own type 7 fields carry table_id). Not
+     *  buildable until Enact can make or pick the table (rule F16). */
+    table: null,
   } as Record<string, number | null>,
 
   field: {
