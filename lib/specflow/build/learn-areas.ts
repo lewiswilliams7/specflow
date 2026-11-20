@@ -60,7 +60,8 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
- * Round 44 (20 Nov): attachment proof again (client side uploads must be on), the uploads setting key (read-only),
+ * Round 44 (20 Nov): Enact finds the client side uploads switch and turns it on (one key, only if unambiguous), then the
+ * attachment proof again;
  * and layout: object keys, query params, tab endpoints, tab_display 1 on the zz form, form row placement values.
  * Round 43 (20 Nov): attachment fields (type 11) proven on the zz form, and round 42b's layout read (it didn't run).
  * Round 42b: where Halo keeps a ticket type's layout tabs and a field's tab (Details / Additional Fields / Ticket
@@ -280,6 +281,41 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
+  await area('uploads setting', async () => {
+    const A = 'uploads setting';
+    // Round 44 (20 Nov): round 43's attachment field was still refused ("Must enable client side uploads"). Lewis wants
+    // Enact to switch it on itself. Read the instance settings, find the key; only if exactly ONE true/false key names
+    // client side uploads and it is off, switch it on (one key, partial post, read back). Otherwise write nothing.
+    const UP = /upload|clientside|client_side|s3|blob|storage/i;
+    const CSU = /client.?side.?upload/i;
+    for (const ep of ['Config', 'Setup', 'Configuration', 'Settings']) {
+      let rec: Row | null = null;
+      try { rec = firstRecord(await runtime().halo.get(`/${ep}`)); } catch (e) { note(A, `${ep}: error`, err(e).slice(0, 160)); continue; }
+      if (!rec || !Object.keys(rec).length) { note(A, ep, 'no record'); continue; }
+      note(A, `${ep}: key count`, Object.keys(rec).length);
+      note(A, `${ep}: upload keys`, Object.fromEntries(Object.entries(rec).filter(([k, v]) => UP.test(k) && typeof v !== 'object')));
+      const hits = Object.keys(rec).filter((k) => CSU.test(k) && typeof rec?.[k] === 'boolean');
+      note(A, `${ep}: client side upload switches`, hits.map((k) => `${k}=${rec?.[k]}`));
+      if (hits.length !== 1) { summary.push(`· uploads setting: ${hits.length} candidate keys on /${ep}, nothing switched`); break; }
+      const key = hits[0];
+      if (rec[key] === true) { summary.push(`✓ uploads setting: ${key} already on`); break; }
+      if (!apply) break;
+      const patch: Row = { [key]: true };
+      if (rec.id !== undefined) patch.id = rec.id;
+      try {
+        await runtime().halo.post(`/${ep}`, [patch]);
+        const back = firstRecord(await runtime().halo.get(`/${ep}`));
+        const changed = Object.keys(rec).filter((k) => JSON.stringify(rec?.[k]) !== JSON.stringify(back?.[k]));
+        note(A, `${ep}: switched ${key}`, { kept: back?.[key], other_keys_changed: changed.filter((k) => k !== key).slice(0, 30) });
+        summary.push(back?.[key] === true ? `✓ uploads setting: Enact switched ${key} on` : `✗ uploads setting: posted ${key}=true, Halo kept ${JSON.stringify(back?.[key])}`);
+      } catch (e) {
+        note(A, `${ep}: switch error`, err(e));
+        summary.push(`✗ uploads setting: ${err(e).slice(0, 200)}`);
+      }
+      break;
+    }
+  });
+
   await area('attachment field', async () => {
     const A = 'attachment field';
     // Round 43 (20 Nov): round 42 showed type 11 is Attachment, refused until "client side uploads" is on. Lewis switches
@@ -303,22 +339,6 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
       ],
     } as unknown as Plan);
     summary.push('· attachment: on the trial portal, raise a "zz Enact r36 form" ticket, attach a file in "zz Enact r43 upload", then open the ticket as an agent and check the file is there');
-  });
-
-  await area('uploads setting', async () => {
-    const A = 'uploads setting';
-    // Round 44 (20 Nov): round 43's attachment field was still refused ("Must enable client side uploads"). Find the
-    // instance setting so Enact can check it before planning an attachment field. Read-only: Enact never changes it.
-    const UP = /upload|clientside|client_side|s3|blob|storage/i;
-    for (const ep of ['Config', 'Setup', 'Configuration', 'Settings']) {
-      const r = await list(ep);
-      if (r.error) { note(A, `${ep}: error`, r.error.slice(0, 160)); continue; }
-      let rec: Row | null = r.rows[0] ?? null;
-      if (!rec) { try { rec = firstRecord(await runtime().halo.get(`/${ep}`)); } catch { rec = null; } }
-      if (!rec) { note(A, `${ep}`, 'no record'); continue; }
-      note(A, `${ep}: key count`, Object.keys(rec).length);
-      note(A, `${ep}: upload keys`, Object.fromEntries(Object.entries(rec).filter(([k, v]) => UP.test(k) && typeof v !== 'object')));
-    }
   });
 
   await area('layout', async () => {
