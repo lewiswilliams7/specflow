@@ -343,6 +343,12 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     if (s.object === 'role' && s.action === 'update') errors.push(`step "${s.id}": roles can't be changed, only created from another role`);
     if (s.object === 'asset_type' && s.action === 'create') needKind(s, s.asset_group, 'asset_group', 'asset_group');
     for (const r of s.set?.read_only ?? []) if (kindOf(r) !== 'field') errors.push(`step "${s.id}": read_only must list field steps (got "${r}")`);
+    // L2: place_fields lists field steps and a known place.
+    for (const pf of s.set?.place_fields ?? []) {
+      if (kindOf(pf.field) !== 'field') errors.push(`step "${s.id}": place_fields must name field steps (got "${pf.field}")`);
+      if (!['details', 'additional', 'ticket_information'].includes(pf.where)) errors.push(`step "${s.id}": place_fields where is details, additional or ticket_information (got "${pf.where}")`);
+    }
+    if (s.set?.place_fields?.length && (s.object !== 'ticket_type' || s.action !== 'update')) errors.push(`step "${s.id}": place_fields goes on a ticket_type UPDATE step`);
     // L1: layout is a ticket type update ("standard" or { tabs: [...] }).
     if (s.set?.layout && (s.object !== 'ticket_type' || s.action !== 'update')) errors.push(`step "${s.id}": layout goes on a ticket_type UPDATE step (add one after the create)`);
     if (s.set?.layout && s.set.layout !== 'standard' && !(Array.isArray((s.set.layout as { tabs?: unknown }).tabs) && (s.set.layout as { tabs: unknown[] }).tabs.length)) errors.push(`step "${s.id}": layout is "standard" or { tabs: [tab names] }`);

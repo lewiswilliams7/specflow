@@ -364,7 +364,7 @@ export type Stage = 'planning' | 'revising' | 'checking' | 'fixing';
 export type GenerateOptions = { signal?: AbortSignal; onStage?: (stage: Stage, detail?: string) => void; cacheKey?: string; effort?: 'low' | 'medium' | 'high'; /** Epoch ms the request must finish by: a fix pass that can't finish in time is skipped, so the user gets the plan and its problems instead of a timeout (13 Nov run-through: 504s). */ deadline?: number; /** Plan once with no second full pass: the caller runs its own, cheaper fix (a patch). 13 Nov: a failing form part paid for two full plans and then a fix. */ once?: boolean; /** This request is already one part of a split brief: never split it again (19 Nov: a part of a form design re-split into itself until the stack overflowed). */ part?: boolean };
 
 // Plan text that is never a step id, even when it happens to match one (a label, an option, a stage name...).
-const TEXT_KEYS = new Set(['name', 'label', 'hint', 'subject', 'body', 'summary', 'equals', 'copy_of', 'based_on', 'after_step', 'to_step', 'step', 'description', 'options', 'add_options', 'list', 'type', 'object', 'action', 'by', 'event', 'sla_action', 'resolve_days', 'targets']);
+const TEXT_KEYS = new Set(['name', 'label', 'hint', 'subject', 'body', 'summary', 'equals', 'copy_of', 'based_on', 'after_step', 'to_step', 'step', 'description', 'options', 'add_options', 'list', 'type', 'object', 'action', 'by', 'event', 'sla_action', 'resolve_days', 'targets', 'where', 'layout', 'tabs']);
 function renameRefs<T>(v: T, map: Map<string, string>, key?: string): T {
   if (typeof v === 'string') return (key && TEXT_KEYS.has(key) ? v : map.get(v) ?? v) as T;
   if (Array.isArray(v)) return v.map((x) => renameRefs(x, map, key)) as T;

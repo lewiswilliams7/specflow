@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 53 (20 Nov): the builder's place_fields on the zz form (one field to each place).
  * Round 52 (20 Nov): field placement, three single changes on zz fields (showondetailsscreen, field tab 1, form row
  * techtab_id -2).
  * Round 51 (20 Nov): the builder's standard tab layout on the zz form, and where its fields sit.
@@ -89,7 +90,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 52;
+export const ROUND = 53;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -293,35 +294,19 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
   await area('field placement', async () => {
     const A = 'field placement';
-    // Round 52 (20 Nov): round 51 showed custom fields sit on tab 0 ("Additional Information"), Halo's own ticket fields
-    // (Summary, Details, Agent) on tab 1, every form row at techtab_id -1, and showondetailsscreen false everywhere.
-    // Three single changes, each on a zz field, each read back. Lewis says where each field then shows on a zz form ticket.
+    // Round 53 (20 Nov): the builder's place_fields (L2) on the zz form: one field to each place, read back.
     const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
-    const fields = (await list('FieldInfo')).rows;
-    const byLabel = (l: string) => fields.find((f) => String(f.label) === l);
-    // 1. A field-level switch: show on the details screen (affects that field on every form).
-    const choice = byLabel('zz Enact r31 choice');
-    await update(A, 'r31 choice showondetailsscreen true', 'FieldInfo', choice ? Number(choice.id) : null, { showondetailsscreen: true });
-    // 2. A field-level tab: move the field to tab 1, where Halo's own ticket fields sit.
-    const rich = byLabel('zz Enact r39 rich text');
-    await update(A, 'r39 rich text tab_id 1', 'FieldInfo', rich ? Number(rich.id) : null, { tab_id: 1 });
-    // 3. A per-form placement: the form row for "zz Enact r33 locked" on the Details tab (-2), this form only.
-    const locked = byLabel('zz Enact r33 locked');
-    if (form && locked && apply) {
-      const d = firstRecord(await runtime().halo.get(`/TicketType/${form.id}`, { includedetails: 'true' }));
-      const rows = ((d?.fields as Row[]) ?? []).map(({ group: _g, fieldinfo: _f, ...r }) => r);
-      const row = rows.find((r) => Number(r.fieldid) === Number(locked.id));
-      if (row) {
-        row.techtab_id = -2;
-        try {
-          await runtime().halo.post('/TicketType', [{ id: Number(form.id), fields: rows }]);
-          const back = firstRecord(await runtime().halo.get(`/TicketType/${form.id}`, { includedetails: 'true' }));
-          const got = ((back?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) === Number(locked.id));
-          note(A, 'r33 locked row techtab_id -2', { kept: got?.techtab_id, techtab_name: got?.techtab_name, rows_before: rows.length, rows_after: ((back?.fields as Row[]) ?? []).length });
-        } catch (e) { note(A, 'r33 locked row error', err(e)); }
-      }
-    }
-    summary.push('· field placement: on a "zz Enact r36 form" ticket as an agent, tell Claude where each shows now: "zz Enact r31 choice", "zz Enact r39 rich text", "zz Enact r33 locked" (Details tab, Additional Information tab, or the Ticket Information panel), and whether only the six tabs show');
+    if (!form) return;
+    await prove('field placement on the zz form', {
+      summary: 'Round 53: one field in each place on the sample form',
+      steps: [
+        { id: 'f1', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR33Locked' } },
+        { id: 'f2', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR31Choice' } },
+        { id: 'f3', object: 'field', action: 'reuse', match: { name: 'CFzzEnactR43Upload' } },
+        { id: 'tt', object: 'ticket_type', action: 'update', match: { name: nameOf(form) }, set: { layout: 'standard', place_fields: [{ field: 'f1', where: 'details' }, { field: 'f2', where: 'ticket_information' }, { field: 'f3', where: 'additional' }] } },
+      ],
+    } as unknown as Plan);
+    summary.push('· field placement: on a "zz Enact r36 form" ticket as an agent: is "zz Enact r33 locked" on the Details tab, "zz Enact r31 choice" in the Ticket Information panel, and "zz Enact r43 upload" on Additional Information? Only six tabs?');
   });
 
   return { out, summary };

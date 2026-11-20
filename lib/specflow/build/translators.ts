@@ -56,6 +56,13 @@ export const SPIKE_MAP = {
     standard: ['progress', 'attachments', 'additional fields', 'view log', 'notification log', 'details'],
   },
 
+  /** Rule L2 (round 52, Concord): where a field shows on a ticket. Per form: the form row's techtab_id (-1 = the field's
+   *  own tab; -2 = the Details tab; a custom tab's id). Round 52: techtab_id -2 kept on zz form 65, rows kept. The field
+   *  itself: showondetailsscreen (round 52: kept on zz r31 choice) puts it in the Ticket Information panel; it applies to
+   *  that field on every form. A field's own tab_id must be a custom field tab ("A tab must be selected" for tab 1).
+   *  On-screen placement not yet confirmed by Lewis. */
+  placement: { rowTab: 'techtab_id' as string | null, detailsTab: -2, additionalTab: 0, ticketInfo: 'showondetailsscreen' as string | null },
+
   /** Round 45 (20 Nov, Concord): instance settings live on GET/POST /Control (2,123 keys). Client side uploads is
    *  enableclientsideuploads; a partial POST { enableclientsideuploads: true } was kept and changed no other key (F15). */
   instanceSettings: { resource: 'Control' as string | null, clientSideUploads: 'enableclientsideuploads' as string | null },
@@ -488,6 +495,13 @@ export const FEATURES: Feature[] = [
     prompt: `- Tab layout (which tabs agents see on a ticket, L1): ticket_type update set: { layout: "standard" } shows only Progress, Attachments, Additional Fields, View Log, Notification Log and Details, every other tab hidden. Or { layout: { tabs: ["Progress", "Details", ...] } } for another list, in order (built-in tab names, or a custom field tab's name). Layout is an UPDATE: for a ticket type created in this plan, add a separate update step after it. Use "standard" on every ticket type this plan creates unless the request asks for Halo's default layout.`,
   },
   {
+    // L2 (round 52): form row techtab_id and the field's showondetailsscreen.
+    key: 'placement',
+    name: 'where fields show on a ticket',
+    sections: ['placement'],
+    prompt: `- Field placement for agents (L2): ticket_type update set: { place_fields: [{ field: field ref, where: "ticket_information" | "details" | "additional" }] }, in the same update step as the layout or add_fields. Decide for every field on every ticket type this plan creates or lays out: "ticket_information" for a few short key facts an agent needs at a glance (the person's name and number, site, key dates); "details" for the core of the request (what's being asked, the main choices, long text); "additional" for everything else (supporting, optional or rarely read answers, uploads). "ticket_information" changes that field on every form it's on: say so in assumptions when the field is reused.`,
+  },
+  {
     key: 'read_only',
     name: 'read-only fields on a form',
     sections: ['readOnly'],
@@ -606,6 +620,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.set?.read_only?.length) keys.add('read_only');
   if (step.set?.attachments) keys.add('attachments');
   if (step.set?.layout) keys.add('layout');
+  if (step.set?.place_fields?.length) keys.add('placement');
   if (step.object === 'role' && step.action === 'create') keys.add('roles');
   if (step.object === 'asset_type' || step.object === 'asset_group') keys.add('asset_types');
   if (step.asset_fields?.length) keys.add('asset_fields');
@@ -1139,6 +1154,8 @@ export interface PlanStep {
     attachments?: { allow?: boolean; min?: number };
     /** ticket_type: which tabs agents see, in order (L1). "standard" = SPIKE_MAP.layout.standard. Every other tab hidden. */
     layout?: 'standard' | { tabs: string[] };
+    /** ticket_type: where each field shows for agents (L2): the Details tab, Additional Fields, or the Ticket Information panel. */
+    place_fields?: { field: string; where: 'details' | 'additional' | 'ticket_information' }[];
     /** service_category: move under another category (a service_category ref), or top_level: true (SC1, round 39). */
     top_level?: boolean;
     /** service_category: User Access "Everyone" (SC3). */
@@ -1451,6 +1468,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
       // Rule F10: always a ticket field, whatever the template was. usage 1010 (custom table) never stores ticket values.
       p.usage = 1;
       delete p.defaultvalue_lookup; // e.g. "Standard Laptop" from the dropdown template
+      // L1/L2: a new field sits on the Additional Fields tab (0), the one custom field tab the standard layout shows.
+      // Round 45: field 365 sent tab_id 0 and was kept.
+      if (p.tab_id !== undefined && Number(p.tab_id) !== SPIKE_MAP.placement.additionalTab) { p.tab_id = SPIKE_MAP.placement.additionalTab; delete p.tab_name; }
 
       const code = step.type ? SPIKE_MAP.fieldTypes[step.type] : null;
       if (code === null || code === undefined) warn(`SPIKE_MAP gap: no type code for "${step.type}"; template's type kept`);
@@ -1689,6 +1709,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   ticket_type: {
+    // L2: a field placed in the Ticket Information panel has its own switch turned on (it applies on every form).
+    related: async (_now, step, refs) => (step.set?.place_fields ?? []).filter((p) => p.where === 'ticket_information' && SPIKE_MAP.placement.ticketInfo && Number(refs[p.field]?.id) > 0)
+      .map((p) => ({ resource: 'FieldInfo', payload: { id: Number(refs[p.field].id), [SPIKE_MAP.placement.ticketInfo as string]: true }, label: `${refs[p.field]?.row?.label ?? refs[p.field]?.name ?? p.field} in the Ticket Information panel` })),
+    relatedPreview: (step, refs) => (step.set?.place_fields ?? []).filter((p) => p.where === 'ticket_information').map((p) => `${refs[p.field]?.row?.label ?? refs[p.field]?.name ?? p.field} in the Ticket Information panel (that field on every form)`),
     detailParams: SPIKE_MAP.layout.readParams,
     resource: 'TicketType',
     template: 'template-tickettype.json',
@@ -1805,6 +1829,24 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const rows = (out[key] as Row[]) ?? keepRows(current[key]);
         out[key] = removeRows(rows, st.remove_fields, refs, warn, SPIKE_MAP.visibility.conditions);
       }
+      if (st.place_fields?.length) {
+        // L2: Details and Additional Fields are set on this form's row; Ticket Information is the field's own switch (related).
+        const P = SPIKE_MAP.placement;
+        const key = m.fields as string;
+        const rows = (out[key] as Row[]) ?? keepRows(current[key]);
+        const info = new Map(((current[key] as Row[]) ?? []).map((r) => [String(r.fieldid), (r.fieldinfo as Row | undefined) ?? {}]));
+        for (const pf of st.place_fields) {
+          const row = rows.find((x) => String(x.fieldid) === String(refs[pf.field]?.id));
+          if (!row) { warn(`place_fields: ${refs[pf.field]?.row?.label ?? refs[pf.field]?.name ?? pf.field} isn't on this form (add it in the same step with add_fields)`); continue; }
+          if (!P.rowTab) { warn('SPIKE_MAP gap: form row tab key unknown'); break; }
+          const own = info.get(String(row.fieldid))?.tab_id;
+          if (pf.where === 'details') row[P.rowTab] = P.detailsTab;
+          else if (pf.where === 'additional') row[P.rowTab] = own !== undefined && Number(own) === P.additionalTab ? -1 : P.additionalTab;
+          else if (pf.where === 'ticket_information') { if (Number(row[P.rowTab] ?? -1) === P.detailsTab) row[P.rowTab] = -1; }
+          else warn(`place_fields: "${pf.where}" isn't details, additional or ticket_information`);
+        }
+        out[key] = rows;
+      }
       if (st.layout) {
         // L1: show only the wanted tabs, in order; hide the rest. A field whose tab gets hidden would vanish for agents.
         const L = SPIKE_MAP.layout;
@@ -1815,10 +1857,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
           const rows = layoutRows(cur, st.layout === 'standard' ? L.standard : st.layout.tabs, warn);
           const shown = new Set(rows.filter((r) => Number(r.display) === 1).map((r) => Number(r.tab_id)));
           const formRows = ((out[m.fields as string] ?? current[m.fields as string]) as Row[] | undefined) ?? [];
+          const infoOf = (fr: Row) => (fr.fieldinfo as Row | undefined) ?? ((((current[m.fields as string] as Row[]) ?? []).find((c) => String(c.fieldid) === String(fr.fieldid))?.fieldinfo as Row | undefined) ?? {});
           for (const fr of formRows) {
-            const tab = Number(fr.techtab_id ?? -1) >= 0 ? Number(fr.techtab_id) : Number((fr.fieldinfo as Row | undefined)?.tab_id ?? -1);
+            const tab = Number(fr.techtab_id ?? -1) >= 0 ? Number(fr.techtab_id) : Number(infoOf(fr).tab_id ?? -1);
             if (tab >= 0 && tab !== L.additionalTabId && cur.some((r) => Number(r.tab_id) === tab) && !shown.has(tab))
-              warn(`layout: field ${(fr.fieldinfo as Row | undefined)?.label ?? fr.fieldid} sits on tab ${tab}, which this layout hides`);
+              warn(`layout: field ${infoOf(fr).label ?? fr.fieldid} sits on tab ${tab}, which this layout hides (place it with place_fields)`);
           }
           out[L.config] = rows;
           if (Number(current[L.mode]) !== 1) out[L.mode] = 1;
@@ -2621,6 +2664,7 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.set?.add_fields ?? []).map((f) => f.ref),
     ...(step.set?.field_hints ?? []).map((f) => f.ref),
     ...(step.set?.field_mandatory ?? []).map((f) => f.ref),
+    ...(step.set?.place_fields ?? []).map((f) => f.field),
     ...(step.set?.replace_fields ?? []).flatMap((r) => [r.old, r.new]),
     step.dynamic?.copy_settings_from,
     ...(step.set?.add_members ?? []),
