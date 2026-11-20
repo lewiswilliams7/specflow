@@ -88,6 +88,16 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
   }
 
   const nameOf = (r: Record<string, unknown> | null | undefined, key = 'name') => String(r?.[key] ?? r?.name ?? '');
+  // N2 (20 Nov): a name typed as "Benefits and Rewards" finds Halo's "Benefits & Rewards" (or "&amp;" as Halo sometimes
+  // stores it). Case, spacing and "&" vs "and" don't matter; an exact match still wins, and a loose one is only taken
+  // when it's the only one.
+  const loose = (v: unknown) => String(v ?? '').replace(/&amp;/gi, '&').replace(/\s*&\s*/g, ' and ').replace(/\s+/g, ' ').trim().toLowerCase();
+  const pick = <R,>(rows: R[], test: (exact: boolean) => (r: R) => boolean): R | undefined => {
+    const exact = rows.filter(test(true));
+    if (exact.length) return exact[0];
+    const near = rows.filter(test(false));
+    return near.length === 1 ? near[0] : undefined;
+  };
   async function findByName(resource: string, name: string, key = 'name'): Promise<Record<string, unknown> | undefined> {
     const rows = extractList(await halo.get(`/${resource}`));
     // A path ("HR > Recruitment > Onboarding") names one record in a tree (service categories, SC1): walk it from the top,
@@ -97,12 +107,12 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       let parent = 0;
       let hit: Record<string, unknown> | undefined;
       for (const part of name.split(' > ').map((x) => x.trim().toLowerCase())) {
-        hit = rows.find((r) => String(r[key] ?? r.name ?? '').trim().toLowerCase() === part && Number(r.parent_id ?? 0) === parent);
+        hit = pick(rows, (exact) => (r) => (exact ? String(r[key] ?? r.name ?? '').trim().toLowerCase() === part : loose(r[key] ?? r.name) === loose(part)) && Number(r.parent_id ?? 0) === parent);
         if (!hit) {
           // The path was read before this build moved things (e.g. "HR > Recruitment" after Recruitment went to the top
           // level). Fall back to the last part's name, but only when exactly one record has it.
           const leaf = name.split(' > ').at(-1)!.trim().toLowerCase();
-          const same = rows.filter((r) => String(r[key] ?? r.name ?? '').trim().toLowerCase() === leaf);
+          const same = rows.filter((r) => loose(r[key] ?? r.name) === loose(leaf));
           return same.length === 1 ? same[0] : undefined;
         }
         parent = Number(hit.id);
@@ -112,7 +122,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
     const want = name.trim().toLowerCase();
     // List rows don't always carry the same name property as the full record
     // (Outcome lists have `buttonname`, full records also have `outcome`), so check all of them.
-    return rows.find((r) => [r[key], r.name, r.label, r.buttonname, r.outcome].some((v) => String(v ?? '').trim().toLowerCase() === want));
+    return pick(rows, (exact) => (r) => [r[key], r.name, r.label, r.buttonname, r.outcome].some((v) => (exact ? String(v ?? '').trim().toLowerCase() === want : !!v && loose(v) === loose(want))));
   }
 
   // Read the instance: pick templates from THIS Halo for everything the plan creates (read-only).
