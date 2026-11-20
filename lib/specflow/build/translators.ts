@@ -57,8 +57,10 @@ export const SPIKE_MAP = {
   },
 
   /** Rule T10 (20 Nov, Lewis): ticket type > Defaults > "Exclude from SLA". While it's on, SLAs don't apply to that
-   *  type's tickets. Key unknown until round 54 reads it (B2: off until then). Enact turns it off whenever it sets an SLA. */
-  slaExclusion: { key: null as string | null },
+   *  type's tickets. Round 54 (Concord): Halo's own ticket types carry default_excludefromsla, true on some and false on
+   *  others (the "default_" keys are the Defaults tab). Every write is read back (verifyUpdate). Enact turns it off
+   *  whenever it sets an SLA. */
+  slaExclusion: { key: 'default_excludefromsla' as string | null },
 
   /** Rule L2 (round 52, Concord): where a field shows on a ticket. Per form: the form row's techtab_id (-1 = the field's
    *  own tab; -2 = the Details tab; a custom tab's id). Round 52: techtab_id -2 kept on zz form 65, rows kept. The field
