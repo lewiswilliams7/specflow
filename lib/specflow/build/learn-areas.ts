@@ -60,6 +60,8 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 42b: where Halo keeps a ticket type's layout tabs and a field's tab (Details / Additional Fields / Ticket
+ * Information), read-only.
  * Round 42 (20 Nov): field types Enact doesn't know (Attachment, Table): read Halo's own fields of each unknown type, and
  * make one "zz Enact r42 type N" field per candidate number, copied from Halo's own text field, for Lewis to identify.
  *
@@ -305,6 +307,42 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
     }
     note(A, 'samples made', made);
     summary.push('· field types: in Halo, Configuration > Custom Fields, open each "zz Enact r42 type N" field and note the "Type of Field" it shows (e.g. type 15 = Attachment). Tell Claude which number is Attachment and which is Table.');
+  });
+
+  await area('layout', async () => {
+    const A = 'layout';
+    // Round 42b (20 Nov): Lewis wants every ticket type on a custom layout showing only Progress, Attachments, Additional
+    // Fields, View Log, Notification Log and Details, and each field placed on Details, Additional Fields or Ticket
+    // Information. Read where Halo keeps both, from Halo's own records. Read-only.
+    const LAYOUT = /tab|layout|section|panel|display|view|_show|show_|hide|visible_|progress|notification|log|additional|attachment|details/i;
+    const types = (await list('TicketType')).rows.filter(own);
+    const seen: Record<string, Set<string>> = {};
+    for (const t of types.slice(0, 12)) {
+      const d = await detail('TicketType', t.id);
+      if (!d) continue;
+      const hit = Object.fromEntries(Object.entries(d).filter(([k, v]) => LAYOUT.test(k) && typeof v !== 'object'));
+      for (const [k, v] of Object.entries(hit)) (seen[k] ??= new Set()).add(JSON.stringify(v));
+      const objs = Object.fromEntries(Object.entries(d).filter(([k, v]) => LAYOUT.test(k) && v && typeof v === 'object').map(([k, v]) => [k, short(v)]));
+      note(A, `ticket type ${t.id} ${nameOf(t)}`, { ...hit, ...objs });
+    }
+    // Keys whose value differs between types are the switches worth testing next round.
+    note(A, 'ticket type keys that vary', Object.fromEntries(Object.entries(seen).filter(([, v]) => v.size > 1).map(([k, v]) => [k, [...v].slice(0, 6)])));
+    note(A, 'ticket type keys always the same', Object.fromEntries(Object.entries(seen).filter(([, v]) => v.size === 1).map(([k, v]) => [k, [...v][0]])));
+    // Where a field sits ("Tab" on the custom field screen), and whether a form row can override it.
+    const fields = (await list('FieldInfo')).rows.filter(own);
+    const tabs: Record<string, Record<string, number>> = {};
+    for (const f of fields.slice(0, 40)) {
+      const d = await detail('FieldInfo', f.id);
+      for (const [k, v] of Object.entries(d ?? {})) if (/tab|section|panel|position|location|display/i.test(k) && typeof v !== 'object') ((tabs[k] ??= {})[JSON.stringify(v)] = ((tabs[k] ?? {})[JSON.stringify(v)] ?? 0) + 1);
+    }
+    note(A, 'field keys for placement (value: how many fields)', tabs);
+    const withRows = types[0];
+    if (withRows) {
+      const d = await detail('TicketType', withRows.id);
+      const row = ((d?.fields as Row[]) ?? []).find((r) => Number(r.fieldid) > 0);
+      if (row) note(A, 'a form row (placement keys)', Object.fromEntries(Object.entries(row).filter(([k]) => /tab|section|panel|position|location|display/i.test(k))));
+    }
+    summary.push('· layout: read only. Also tell Claude: on the trial, does any ticket type already use a Custom layout? If so, which one.');
   });
 
   return { out, summary };
