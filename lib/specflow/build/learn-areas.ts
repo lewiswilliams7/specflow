@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 48 (20 Nov): the API the agent app loads its language text from (found in its main script), read-only.
  * Round 47 (20 Nov): built-in tab names from the agent app's own public files on the instance host, read-only.
  * Round 46 (20 Nov): names for Halo's built-in tabs (translation keys in tab_config), read-only.
  * Round 45 (20 Nov): more settings endpoints for client side uploads; layout tab_config read in full, /Tabs, and one tab
@@ -83,7 +84,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 47;
+export const ROUND = 48;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -287,10 +288,9 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
   await area('tab names', async () => {
     const A = 'tab names';
-    // Round 47 (20 Nov): round 46 found no API that names the built-in tabs ("agentweb_152"): /Translation is entity
-    // translations only. The agent web app must carry the English text in its own files. Read the app's public files on
-    // the SAME host as the instance (never another host), look for the keys, and note where the app loads language
-    // text from. Read-only.
+    // Round 48 (20 Nov): round 47 showed the agent app names things with this.its("agentweb_66"): the English text is
+    // loaded at run time. Find, in the app's main script, the function its() and the API paths that look like language
+    // text, then GET each of those paths (read-only) and look for the tab keys in what comes back.
     const base = new URL(opts.instance);
     const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
     let keys: string[] = [];
@@ -298,47 +298,62 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
       const d = firstRecord(await runtime().halo.get(`/TicketType/${form?.id ?? 2}`, { includedetails: 'true', includeconfig: 'true' }));
       keys = ((d?.tab_config as Row[]) ?? []).filter((r) => Number(r.tab_id) < 0).map((r) => String(r.tab_name));
     } catch (e) { note(A, 'tab_config error', err(e)); }
-    const get = async (path: string) => {
+    const fetchText = async (path: string) => {
       const u = new URL(path, base);
-      if (u.host !== base.host) return null;
-      try {
-        const r = await fetch(u, { redirect: 'follow' });
-        if (new URL(r.url).host !== base.host) return { url: u.pathname, status: r.status, text: '' };
-        return { url: u.pathname, status: r.status, text: r.ok ? (await r.text()).slice(0, 15_000_000) : '' };
-      } catch (e) { return { url: u.pathname, status: 0, text: '', error: err(e).slice(0, 100) }; }
+      if (u.host !== base.host) return '';
+      try { const r = await fetch(u); return r.ok && new URL(r.url).host === base.host ? await r.text() : ''; } catch { return ''; }
     };
-    const found: Record<string, string> = {};
-    const esc = (k: string) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const scan = (text: string) => {
-      for (const k of keys) {
-        if (found[k]) continue;
-        const m = text.match(new RegExp(`["']?${esc(k)}["']?\\s*:\\s*["']([^"'\\n]{1,60})["']`));
-        if (m) found[k] = m[1];
-      }
-    };
-    const seen: Row = {};
-    const queue: string[] = ['/', '/agent', '/asset-manifest.json', '/manifest.json'];
-    const hints: string[] = [];
-    for (let i = 0; i < queue.length && i < 80; i++) {
-      const r = await get(queue[i]);
-      if (!r) continue;
-      seen[r.url] = `${r.status} ${r.text.length} chars${r.text.includes('agentweb_152') ? ' HAS agentweb_152' : ''}`;
-      if (!r.text) continue;
-      scan(r.text);
-      // Same-host scripts, styles' neighbours and json files the page or manifest names.
-      for (const m of r.text.matchAll(/["'(]((?:\/|\.\/|https?:\/\/[^"'()\s]+?\/|[A-Za-z0-9_-]+\/)[^"'()\s<>]*?\.(?:js|json))(?:\?[^"'()\s]*)?["')]/g)) {
-        try { const u = new URL(m[1], new URL(r.url, base)); if (u.host === base.host && !queue.includes(u.pathname)) queue.push(u.pathname); } catch { /* not a url */ }
-      }
-      // Where the app loads language text from: short snippets around "lang" + ".json" or "agentweb".
-      for (const m of r.text.matchAll(/.{0,80}(?:lang(?:uage)?[^"']{0,40}\.json|agentweb_1\d\d).{0,80}/gi)) if (hints.length < 15) hints.push(`${r.url}: ${m[0]}`);
-      if (Object.keys(found).length === keys.length) break;
+    const page = await fetchText('/');
+    const main = [...page.matchAll(/src=["']([^"']*index-[^"']+\.js)["']/g)].map((m) => m[1])[0] ?? '';
+    const js = main ? await fetchText(main) : '';
+    note(A, 'main script', `${main} ${js.length} chars`);
+    // its() and how the language text is loaded.
+    const around = (re: RegExp, n = 6, width = 260) => [...js.matchAll(re)].slice(0, n).map((m) => js.slice(Math.max(0, (m.index ?? 0) - 60), (m.index ?? 0) + width));
+    note(A, 'its() definition', around(/\bits\s*\(\s*[a-zA-Z_$]+\s*,[^)]*\)\s*\{/g, 3, 400));
+    const paths = new Set<string>();
+    for (const m of js.matchAll(/["'`](\/?(?:api\/)?[A-Za-z]*(?:[Ll]anguage|[Tt]ranslat|[Ll]ocali[sz]|[Ss]trings|[Tt]erms)[A-Za-z0-9_\/]*)["'`?]/g)) {
+      const p = m[1].replace(/^\/?(api\/)?/, '');
+      if (p.length > 2 && p.length < 60 && !/\.(js|css|png|svg)$/.test(p)) paths.add(p);
     }
-    note(A, 'files read', seen);
-    note(A, 'language hints', hints);
+    note(A, 'language-like paths in the script', [...paths].slice(0, 40));
+    note(A, 'agentweb_152 in script', around(/agentweb_152\b/g, 3, 200));
+    const want = new RegExp(`["']?(${keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})["']?\\s*:\\s*["']([^"'\\n]{1,60})["']`, 'g');
+    const found: Record<string, string> = {};
+    const tried: Row = {};
+    const scanJson = (v: unknown) => {
+      // Shapes seen elsewhere in Halo: { key: text } or rows like { name|key|id: key, value|text|translation: text }.
+      const walk = (x: unknown, d = 0) => {
+        if (!x || typeof x !== 'object' || d > 6) return;
+        const r = x as Row;
+        for (const [k, val] of Object.entries(r)) {
+          if (keys.includes(k) && typeof val === 'string') found[k] ??= val;
+          if (typeof val === 'string' && keys.includes(val)) {
+            const text = Object.entries(r).find(([kk, vv]) => kk !== k && typeof vv === 'string' && !keys.includes(vv as string) && /value|text|transl|desc|name/i.test(kk));
+            if (text) found[val] ??= String(text[1]);
+          }
+          if (val && typeof val === 'object') walk(val, d + 1);
+        }
+      };
+      walk(v);
+    };
+    for (const p of keys.length ? [...paths].slice(0, 25) : []) {
+      for (const params of [undefined, { language_id: '1' }, { lang: 'en' }] as (Record<string, string> | undefined)[]) {
+        const label = p + (params ? '?' + new URLSearchParams(params).toString() : '');
+        try {
+          const res = await runtime().halo.get(`/${p}`, params);
+          const text = JSON.stringify(res);
+          const before = Object.keys(found).length;
+          scanJson(res);
+          for (const m of text.matchAll(want)) found[m[1]] ??= m[2];
+          tried[label] = `${text.length} chars${text.includes('agentweb_') ? ', has agentweb keys' : ''}, named ${Object.keys(found).length - before}`;
+          break;
+        } catch (e) { tried[label] = `error: ${err(e).slice(0, 80)}`; }
+      }
+    }
+    note(A, 'paths tried', tried);
     note(A, 'names found', found);
     note(A, 'still unnamed', keys.filter((k) => !found[k]));
-    summary.push(`· tab names: named ${Object.keys(found).length} of ${keys.length} built-in tabs from the app's own files`);
-    summary.push('· tab names: if few were named, send Claude a screenshot of the tab bar on a "zz Enact r36 form" ticket opened as an agent');
+    summary.push(`· tab names: named ${Object.keys(found).length} of ${keys.length} built-in tabs`);
   });
 
   return { out, summary };
