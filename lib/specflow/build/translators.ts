@@ -67,7 +67,12 @@ export const SPIKE_MAP = {
    *  itself: showondetailsscreen (round 52: kept on zz r31 choice) puts it in the Ticket Information panel; it applies to
    *  that field on every form. A field's own tab_id must be a custom field tab ("A tab must be selected" for tab 1).
    *  On-screen placement not yet confirmed by Lewis. */
-  placement: { rowTab: 'techtab_id' as string | null, detailsTab: -2, additionalTab: 0, ticketInfo: 'showondetailsscreen' as string | null },
+  placement: {
+    rowTab: 'techtab_id' as string | null, detailsTab: -2, additionalTab: 0, ticketInfo: 'showondetailsscreen' as string | null,
+    /** L2b (20 Nov, Compleat Filing Request): rows set to techtab_id -2 showed TWICE on Additional Fields. Details
+     *  placement is off until a trial round shows what -2 really does; "details" leaves the field on Additional Fields. */
+    useDetailsTab: false,
+  },
 
   /** Round 45 (20 Nov, Concord): instance settings live on GET/POST /Control (2,123 keys). Client side uploads is
    *  enableclientsideuploads; a partial POST { enableclientsideuploads: true } was kept and changed no other key (F15). */
@@ -505,7 +510,7 @@ export const FEATURES: Feature[] = [
     key: 'placement',
     name: 'where fields show on a ticket',
     sections: ['placement'],
-    prompt: `- Field placement for agents (L2): ticket_type update set: { place_fields: [{ label: "exact label of a field already on that form" OR field: ref of a field step in this plan, where: "ticket_information" | "details" | "additional" }] }. Use label for fields already on the form (no reuse step needed); field only for a field created or reused in this plan, in the same update step as the layout or add_fields. Decide for every field on every ticket type this plan creates or lays out: "ticket_information" for a few short key facts an agent needs at a glance (the person's name and number, site, key dates); "details" for the core of the request (what's being asked, the main choices, long text); "additional" for everything else (supporting, optional or rarely read answers, uploads). "ticket_information" changes that field on every form it's on: say so in assumptions when the field is reused.`,
+    prompt: `- Field placement for agents (L2): ticket_type update set: { place_fields: [{ label: "exact label of a field already on that form" OR field: ref of a field step in this plan, where: "ticket_information" | "details" | "additional" }] }. Use label for fields already on the form (no reuse step needed); field only for a field created or reused in this plan, in the same update step as the layout or add_fields. Use "ticket_information" for a few short key facts an agent needs at a glance (the person's name and number, site, key dates); everything else stays on Additional Fields (no entry needed). "details" is switched off for now (L2b: it showed fields twice); never use it. To undo an earlier Details placement: ticket_type update set: { reset_details_placement: true }. "ticket_information" changes that field on every form it's on: say so in assumptions when the field is reused.`,
   },
   {
     // T10: "Exclude from SLA" on a ticket type.
@@ -634,7 +639,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.set?.attachments) keys.add('attachments');
   if (step.set?.layout) keys.add('layout');
   if (step.set?.exclude_from_sla !== undefined) keys.add('sla_exclusion');
-  if (step.set?.place_fields?.length) keys.add('placement');
+  if (step.set?.place_fields?.length || step.set?.reset_details_placement) keys.add('placement');
   if (step.object === 'role' && step.action === 'create') keys.add('roles');
   if (step.object === 'asset_type' || step.object === 'asset_group') keys.add('asset_types');
   if (step.asset_fields?.length) keys.add('asset_fields');
@@ -1172,6 +1177,8 @@ export interface PlanStep {
     exclude_from_sla?: boolean;
     /** ticket_type: where each field shows for agents (L2): the Details tab, Additional Fields, or the Ticket Information panel. */
     place_fields?: { field?: string; label?: string; where: 'details' | 'additional' | 'ticket_information' }[];
+    /** ticket_type: put back every field Enact placed on the Details tab (row tab -2) to its own tab (L2b). */
+    reset_details_placement?: boolean;
     /** service_category: move under another category (a service_category ref), or top_level: true (SC1, round 39). */
     top_level?: boolean;
     /** service_category: User Access "Everyone" (SC3). */
@@ -1882,12 +1889,25 @@ export const translators: Record<PlanStep['object'], Translator> = {
           }
           if (!P.rowTab) { warn('SPIKE_MAP gap: form row tab key unknown'); break; }
           const own = info.get(String(row.fieldid))?.tab_id;
-          if (pf.where === 'details') row[P.rowTab] = P.detailsTab;
+          if (pf.where === 'details' && P.useDetailsTab) row[P.rowTab] = P.detailsTab;
+          else if (pf.where === 'details') {
+            if (Number(row[P.rowTab]) === P.detailsTab) row[P.rowTab] = -1;
+            warn(`note: ${shownAs} stays on Additional Fields (Details tab placement is off, L2b)`);
+          }
           else if (pf.where === 'additional') row[P.rowTab] = own !== undefined && Number(own) === P.additionalTab ? -1 : P.additionalTab;
           else if (pf.where === 'ticket_information') { if (Number(row[P.rowTab] ?? -1) === P.detailsTab) row[P.rowTab] = -1; }
           else warn(`place_fields: "${pf.where}" isn't details, additional or ticket_information`);
         }
         out[key] = rows;
+      }
+      if (st.reset_details_placement) {
+        // L2b: undo Details placement (row tab -2 showed fields twice on Additional Fields). The field's own tab again.
+        const key = m.fields as string;
+        const rows = (out[key] as Row[]) ?? keepRows(current[key]);
+        const rk = SPIKE_MAP.placement.rowTab ?? 'techtab_id';
+        let n = 0;
+        for (const r of rows) if (Number(r[rk]) === SPIKE_MAP.placement.detailsTab) { r[rk] = -1; n++; }
+        if (n) out[key] = rows;
       }
       if (st.layout) {
         // L1: show only the wanted tabs, in order; hide the rest. A field whose tab gets hidden would vanish for agents.

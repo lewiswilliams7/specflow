@@ -164,6 +164,7 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
   if (st.everyone) out.push('User Access: Everyone');
   if (st.parent) out.push(`move under ${ref(st.parent)}`);
   if (st.place_fields?.length) out.push(`place ${st.place_fields.length} field${st.place_fields.length === 1 ? '' : 's'}: ${st.place_fields.map((p) => `${p.label ?? p.field} → ${p.where === 'ticket_information' ? 'Ticket Information' : p.where === 'details' ? 'Details' : 'Additional Fields'}`).join(', ')}`);
+  if (st.reset_details_placement) out.push('put fields Enact placed on the Details tab back on their own tab');
   if (st.layout) out.push(st.layout === 'standard' ? 'show only the Progress, Attachments, Additional Fields, View Log, Notification Log and Details tabs' : `show only these tabs: ${st.layout.tabs.join(', ')}`);
   if (st.attachments) out.push(st.attachments.allow === false ? 'turn attachments off' : st.attachments.min ? `require at least ${st.attachments.min} attachment${st.attachments.min === 1 ? '' : 's'}` : 'allow attachments (not required)');
   for (const f of st.remove_fields ?? []) out.push(`take ${ref(f)} off the form (the field stays in Halo)`);
