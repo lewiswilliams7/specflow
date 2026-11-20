@@ -343,6 +343,9 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     if (s.object === 'role' && s.action === 'update') errors.push(`step "${s.id}": roles can't be changed, only created from another role`);
     if (s.object === 'asset_type' && s.action === 'create') needKind(s, s.asset_group, 'asset_group', 'asset_group');
     for (const r of s.set?.read_only ?? []) if (kindOf(r) !== 'field') errors.push(`step "${s.id}": read_only must list field steps (got "${r}")`);
+    // L1: layout is a ticket type update ("standard" or { tabs: [...] }).
+    if (s.set?.layout && (s.object !== 'ticket_type' || s.action !== 'update')) errors.push(`step "${s.id}": layout goes on a ticket_type UPDATE step (add one after the create)`);
+    if (s.set?.layout && s.set.layout !== 'standard' && !(Array.isArray((s.set.layout as { tabs?: unknown }).tabs) && (s.set.layout as { tabs: unknown[] }).tabs.length)) errors.push(`step "${s.id}": layout is "standard" or { tabs: [tab names] }`);
     if (s.object === 'faq_list' && s.action !== 'reuse') errors.push(`step "${s.id}": FAQ lists can only be reused for now`);
     if (s.object === 'kb_article' && s.action === 'create') {
       needKind(s, s.faq_list, 'faq_list', 'faq_list');

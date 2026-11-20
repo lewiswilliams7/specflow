@@ -235,7 +235,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         }
         if (!target) throw new Error(`No ${t.resource} named "${step.match?.name}" to update.`);
         // Updates are computed from the record as it is NOW (e.g. a form's existing rows, rule U2).
-        const current = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
+        const current = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true', ...t.detailParams })) ?? {};
         const changes = t.update(step, refs, warn, current);
         // Drop no-op changes (value already as wanted), so "nothing to change" is reported honestly.
         // Unchanged values aren't sent. Form rows come back with display copies (group, fieldinfo) that updates never
@@ -266,7 +266,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
           const rest = Object.fromEntries(Object.entries(changes).filter(([k]) => !alone.includes(k)));
           if (Object.keys(rest).length) await halo.post(`/${t.resource}`, [{ id: target.id, ...rest }]);
           for (const k of alone) await halo.post(`/${t.resource}`, [{ id: target.id, [k]: changes[k] }]);
-          const back = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
+          const back = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true', ...t.detailParams })) ?? {};
           const bad = t.verifyUpdate
             ? t.verifyUpdate(back, changes, step, refs)
             : Object.keys(changes).filter((k) => JSON.stringify(back[k]) !== JSON.stringify(changes[k])).map((k) => `${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(changes[k])}`);

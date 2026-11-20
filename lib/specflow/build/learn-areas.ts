@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 51 (20 Nov): the builder's standard tab layout on the zz form, and where its fields sit.
  * Round 50 (20 Nov): tab names from the ClientCache call's languagepack (label/value rows), read-only.
  * Round 49 (20 Nov): where the agent app fills its translations, and the addresses there, read-only.
  * Round 48 (20 Nov): the API the agent app loads its language text from (found in its main script), read-only.
@@ -86,7 +87,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 50;
+export const ROUND = 51;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -288,64 +289,26 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
 
 
 
-  await area('tab names', async () => {
-    const A = 'tab names';
-    // Round 48 (20 Nov): round 47 showed the agent app names things with this.its("agentweb_66"): the English text is
-    // loaded at run time. Find, in the app's main script, the function its() and the API paths that look like language
-    // text, then GET each of those paths (read-only) and look for the tab keys in what comes back.
-    const base = new URL(opts.instance);
+  await area('layout', async () => {
+    const A = 'layout';
+    // Round 51 (20 Nov): prove the builder's layout (L1) on the zz form: "standard" = Progress, Attachments, Additional
+    // Fields, View Log, Notification Log, Details shown, everything else hidden. Then read where each of its fields sits
+    // (form row techtab_id, the field's own tab and details settings) so field placement can be tested next.
     const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
-    let keys: string[] = [];
+    if (!form) { note(A, 'skipped', 'no zz form'); return; }
+    await prove('standard layout on the zz form', {
+      summary: 'Round 51: standard tab layout on the sample form',
+      steps: [{ id: 'tt', object: 'ticket_type', action: 'update', match: { name: nameOf(form) }, set: { layout: 'standard' } }],
+    } as unknown as Plan);
     try {
-      const d = firstRecord(await runtime().halo.get(`/TicketType/${form?.id ?? 2}`, { includedetails: 'true', includeconfig: 'true' }));
-      keys = ((d?.tab_config as Row[]) ?? []).filter((r) => Number(r.tab_id) < 0).map((r) => String(r.tab_name));
-    } catch (e) { note(A, 'tab_config error', err(e)); }
-    const fetchText = async (path: string) => {
-      const u = new URL(path, base);
-      if (u.host !== base.host) return '';
-      try { const r = await fetch(u); return r.ok && new URL(r.url).host === base.host ? await r.text() : ''; } catch { return ''; }
-    };
-    const page = await fetchText('/');
-    const main = [...page.matchAll(/src=["']([^"']*index-[^"']+\.js)["']/g)].map((m) => m[1])[0] ?? '';
-    const js = main ? await fetchText(main) : '';
-    note(A, 'main script', `${main} ${js.length} chars`);
-    // Round 50: round 49 showed the text is a languagepack { translations: [{ label, value }] } that the app gets with its
-    // "ClientCache" call (it logs "Issue with ClientCache" when that fails). Read the calls to ClientCache in the script,
-    // then GET /ClientCache with the params the script uses, and read label/value rows for the tab keys.
-    const around = (re: RegExp, n = 8, width = 360) => [...js.matchAll(re)].slice(0, n).map((m) => js.slice(Math.max(0, (m.index ?? 0) - 160), (m.index ?? 0) + width));
-    const calls = around(/["'`]ClientCache[^"'`]*["'`]/g, 8);
-    note(A, 'ClientCache calls in the script', calls);
-    const paramSets: Record<string, string>[] = [{}];
-    for (const c of calls) {
-      const obj = c.match(/ClientCache[^"'`]*["'`]\s*,\s*\{([^}]{0,300})\}/);
-      if (!obj) continue;
-      const ps: Record<string, string> = {};
-      for (const m of obj[1].matchAll(/([a-z_]+)\s*:\s*(!0|!1|"[^"]*"|\d+)/gi)) ps[m[1]] = m[2] === '!0' ? 'true' : m[2] === '!1' ? 'false' : m[2].replace(/"/g, '');
-      if (Object.keys(ps).length) paramSets.push(ps);
-    }
-    paramSets.push({ includetranslations: 'true' }, { languagepack: 'true' }, { translations: 'true' });
-    const found: Record<string, string> = {};
-    const tried: Row = {};
-    const takeRows = (v: unknown, d = 0) => {
-      if (!v || typeof v !== 'object' || d > 5) return;
-      if (Array.isArray(v)) { for (const r of v) { const row = r as Row; if (row && typeof row === 'object' && keys.includes(String(row.label)) && typeof row.value === 'string') found[String(row.label)] ??= row.value as string; else takeRows(r, d + 1); } return; }
-      for (const x of Object.values(v as Row)) takeRows(x, d + 1);
-    };
-    for (const ps of paramSets.slice(0, 8)) {
-      const label = 'ClientCache?' + new URLSearchParams(ps).toString();
-      try {
-        const res = await runtime().halo.get('/ClientCache', ps);
-        const b = Object.keys(found).length;
-        takeRows(res);
-        const text = JSON.stringify(res);
-        tried[label] = `${text.length} chars, top keys: ${Object.keys((res as Row) ?? {}).slice(0, 15).join(',')}, named ${Object.keys(found).length - b}`;
-        if (Object.keys(found).length >= keys.length) break;
-      } catch (e) { tried[label] = `error: ${err(e).slice(0, 80)}`; }
-    }
-    note(A, 'paths tried', tried);
-    note(A, 'names found', found);
-    note(A, 'still unnamed', keys.filter((k) => !found[k]));
-    summary.push(`· tab names: named ${Object.keys(found).length} of ${keys.length} built-in tabs`);
+      const d = firstRecord(await runtime().halo.get(`/TicketType/${form.id}`, { includedetails: 'true', includeconfig: 'true' }));
+      note(A, 'zz form tabs shown after', ((d?.tab_config as Row[]) ?? []).filter((r) => Number(r.display) === 1).map((r) => `${r.tab_id} ${r.tab_name} seq ${r.sequence}`));
+      note(A, 'zz form fields and where they sit', ((d?.fields as Row[]) ?? []).map((r) => {
+        const fi = (r.fieldinfo as Row | undefined) ?? {};
+        return `${fi.label ?? r.fieldid}: row techtab_id ${r.techtab_id}, technewlocation ${r.technewlocation}, groupid ${r.groupid}; field tab_id ${fi.tab_id} "${fi.tab_name ?? ''}", showondetailsscreen ${fi.showondetailsscreen}, details_column_group ${fi.details_column_group}`;
+      }));
+    } catch (e) { note(A, 'read error', err(e)); }
+    summary.push('· layout: open a "zz Enact r36 form" ticket as an agent. Check only Progress, Attachments, Additional Information (Additional Fields), View Log, Notification Log and Details show, in that order. Also tell Claude which fields show on the Details tab, which on Additional Information, and which in the Ticket Information panel');
   });
 
   return { out, summary };

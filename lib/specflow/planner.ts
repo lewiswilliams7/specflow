@@ -787,6 +787,22 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     }
   }
 
+  // M32 (20 Nov): every ticket type Enact creates gets the standard tab layout (L1: Progress, Attachments, Additional
+  // Fields, View Log, Notification Log, Details), as a separate update after the create. Layout put on the create step
+  // itself is moved to that update. A plan that already sets a layout for the type keeps its own.
+  {
+    const all = plan.steps as PlanStep[];
+    const nm = (x: PlanStep) => String(x.name ?? x.match?.name ?? '').toLowerCase();
+    for (const t of all.filter((x) => x.object === 'ticket_type' && x.action === 'create')) {
+      const own = (t as PlanStep & { set?: { layout?: unknown } }).set?.layout;
+      if (own && t.set) delete (t.set as { layout?: unknown }).layout;
+      if (all.some((x) => x.object === 'ticket_type' && x.action === 'update' && nm(x) === nm(t) && x.set?.layout)) continue;
+      const id = `layout_${t.id}`;
+      if (all.some((x) => x.id === id)) continue;
+      all.splice(all.indexOf(t) + 1, 0, { id, object: 'ticket_type', action: 'update', match: { name: String(t.name) }, set: { layout: (own as 'standard' | { tabs: string[] } | undefined) ?? 'standard' } } as PlanStep);
+    }
+  }
+
   // M30 (19 Nov): a show rule on an existing dropdown that lacks the answer it tests ("Other" on Bruntwood's
   // Application / System, which only had a placeholder option) gets that option added. Adding an option only adds,
   // so the check "has no option Other" is repaired in code instead of sent round the model again.

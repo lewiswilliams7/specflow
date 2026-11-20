@@ -34,6 +34,28 @@ export const SPIKE_MAP = {
     table: null,
   } as Record<string, number | null>,
 
+  /** Rule L1 (rounds 44-50, Concord). A ticket type's tab layout is tab_config, read only with includeconfig=true. Halo's
+   *  built-in tabs are named by translation key; round 50 read the English text from GET /ClientCache (languagepack):
+   *  agentweb_152 Progress (tab_id -1), agentweb_151 Details (-2), agentweb_153 Attachments (-4), agentweb_6703 View Log
+   *  (-49), agentweb23_197 Notification Log (-51). Custom field tabs use their own id and name (/Tabs); 0 is the default
+   *  custom field tab ("Additional Information" on Concord), used for "Additional Fields". Round 45: posting tab_config
+   *  back with display 0 hid that tab and kept every row. tab_display 1 = the type uses its own layout. */
+  layout: {
+    config: 'tab_config' as string | null,
+    mode: 'tab_display' as string | null,
+    readParams: { includeconfig: 'true' } as Record<string, string>,
+    builtIn: {
+      progress: 'agentweb_152', details: 'agentweb_151', attachments: 'agentweb_153', 'view log': 'agentweb_6703',
+      'notification log': 'agentweb23_197', 'audit log': 'agentweb7_114', 'related requests': 'agentweb_3733',
+      'child requests': 'miscterms_110', 'approval process': 'miscterms_111', 'affected assets': 'agentweb_2064',
+      tasks: 'tasks', appointments: 'appointments', 'event log': 'agentweb_5869', 'call log': 'agentweb13_60',
+    } as Record<string, string>,
+    /** "Additional Fields": the default custom field tab. */
+    additionalTabId: 0,
+    /** Lewis, 20 Nov: every ticket type Enact builds shows only these, in this order. */
+    standard: ['progress', 'attachments', 'additional fields', 'view log', 'notification log', 'details'],
+  },
+
   /** Round 45 (20 Nov, Concord): instance settings live on GET/POST /Control (2,123 keys). Client side uploads is
    *  enableclientsideuploads; a partial POST { enableclientsideuploads: true } was kept and changed no other key (F15). */
   instanceSettings: { resource: 'Control' as string | null, clientSideUploads: 'enableclientsideuploads' as string | null },
@@ -459,6 +481,13 @@ export const FEATURES: Feature[] = [
     prompt: `- Attachments are a setting on the form, not a field (T9): ticket_type update (or create) set: { attachments: { allow: true, min: 0 } }; min: 1 when the request says an attachment is required on EVERY ticket (a conditional or optional upload stays min 0, and say in assumptions it can't be required only sometimes). For a general "attach files" on the form use this setting. A NAMED upload box in a design (e.g. "MATB1 Upload", "Supporting documents") is a field of type attachment (F15) added to the form like any other field.`,
   },
   {
+    // L1 (rounds 44-50): tab_config with display flags; names from ClientCache.
+    key: 'layout',
+    name: 'ticket type tab layout',
+    sections: ['layout'],
+    prompt: `- Tab layout (which tabs agents see on a ticket, L1): ticket_type update set: { layout: "standard" } shows only Progress, Attachments, Additional Fields, View Log, Notification Log and Details, every other tab hidden. Or { layout: { tabs: ["Progress", "Details", ...] } } for another list, in order (built-in tab names, or a custom field tab's name). Layout is an UPDATE: for a ticket type created in this plan, add a separate update step after it. Use "standard" on every ticket type this plan creates unless the request asks for Halo's default layout.`,
+  },
+  {
     key: 'read_only',
     name: 'read-only fields on a form',
     sections: ['readOnly'],
@@ -576,6 +605,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'kb_article' || step.object === 'faq_list') keys.add('kb_articles');
   if (step.set?.read_only?.length) keys.add('read_only');
   if (step.set?.attachments) keys.add('attachments');
+  if (step.set?.layout) keys.add('layout');
   if (step.object === 'role' && step.action === 'create') keys.add('roles');
   if (step.object === 'asset_type' || step.object === 'asset_group') keys.add('asset_types');
   if (step.asset_fields?.length) keys.add('asset_fields');
@@ -1107,6 +1137,8 @@ export interface PlanStep {
     retire?: boolean;
     /** ticket_type: attachments on the form (T9): allow them, and how many are required (0 = optional). */
     attachments?: { allow?: boolean; min?: number };
+    /** ticket_type: which tabs agents see, in order (L1). "standard" = SPIKE_MAP.layout.standard. Every other tab hidden. */
+    layout?: 'standard' | { tabs: string[] };
     /** service_category: move under another category (a service_category ref), or top_level: true (SC1, round 39). */
     top_level?: boolean;
     /** service_category: User Access "Everyone" (SC3). */
@@ -1238,6 +1270,8 @@ export interface Translator {
   prepare?: (step: PlanStep, refs: Refs) => Promise<void>;
   /** Only reuse is supported (create refused with a warning). */
   reuseOnly?: boolean;
+  /** Extra query params when an update reads the record and reads it back (L1: ticket types with includeconfig). */
+  detailParams?: Record<string, string>;
   /** Update keys saved in a request of their own, after the others (SV2). */
   saveAlone?: string[];
 }
@@ -1252,6 +1286,23 @@ function fromTemplate(file: string, resource: string): Record<string, unknown> {
 }
 
 /** Template file for a field of a given plan type ("text", "dropdown", ...). */
+/** L1: the tab_config rows for a layout: the wanted tabs shown in the given order, every other tab hidden after them. */
+export function layoutRows(current: Row[], want: string[], warn: (m: string) => void): Row[] {
+  const L = SPIKE_MAP.layout;
+  const key = (r: Row) => String(r.tab_name ?? '').toLowerCase();
+  const picked: Row[] = [];
+  for (const w of want) {
+    const name = w.trim().toLowerCase();
+    const row = /^additional (fields|information)$/.test(name)
+      ? current.find((r) => Number(r.tab_id) === L.additionalTabId)
+      : L.builtIn[name] ? current.find((r) => String(r.tab_name) === L.builtIn[name]) : current.find((r) => Number(r.tab_id) >= 0 && key(r) === name);
+    if (!row) { warn(`layout: no tab "${w}" on this ticket type`); continue; }
+    if (!picked.includes(row)) picked.push(row);
+  }
+  const rest = current.filter((r) => !picked.includes(r));
+  return [...picked.map((r, i) => ({ ...r, display: 1, sequence: (i + 1) * 10 })), ...rest.map((r, i) => ({ ...r, display: 0, sequence: (picked.length + i + 1) * 10 }))];
+}
+
 export function fieldTemplateFile(type = 'text'): string {
   return `template-field-${type}.json`;
 }
@@ -1638,6 +1689,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   ticket_type: {
+    detailParams: SPIKE_MAP.layout.readParams,
     resource: 'TicketType',
     template: 'template-tickettype.json',
     afterCreate: (id, sent) => (sent._restore_tab_display ? { id, tab_display: sent._restore_tab_display } : null),
@@ -1753,6 +1805,25 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const rows = (out[key] as Row[]) ?? keepRows(current[key]);
         out[key] = removeRows(rows, st.remove_fields, refs, warn, SPIKE_MAP.visibility.conditions);
       }
+      if (st.layout) {
+        // L1: show only the wanted tabs, in order; hide the rest. A field whose tab gets hidden would vanish for agents.
+        const L = SPIKE_MAP.layout;
+        const cur = current[L.config as string] as Row[] | undefined;
+        if (!L.config || !L.mode) warn('SPIKE_MAP gap: ticket type layout keys unknown');
+        else if (!Array.isArray(cur) || !cur.length) warn('layout: Halo returned no tab layout for this ticket type (read with includeconfig)');
+        else {
+          const rows = layoutRows(cur, st.layout === 'standard' ? L.standard : st.layout.tabs, warn);
+          const shown = new Set(rows.filter((r) => Number(r.display) === 1).map((r) => Number(r.tab_id)));
+          const formRows = ((out[m.fields as string] ?? current[m.fields as string]) as Row[] | undefined) ?? [];
+          for (const fr of formRows) {
+            const tab = Number(fr.techtab_id ?? -1) >= 0 ? Number(fr.techtab_id) : Number((fr.fieldinfo as Row | undefined)?.tab_id ?? -1);
+            if (tab >= 0 && tab !== L.additionalTabId && cur.some((r) => Number(r.tab_id) === tab) && !shown.has(tab))
+              warn(`layout: field ${(fr.fieldinfo as Row | undefined)?.label ?? fr.fieldid} sits on tab ${tab}, which this layout hides`);
+          }
+          out[L.config] = rows;
+          if (Number(current[L.mode]) !== 1) out[L.mode] = 1;
+        }
+      }
       if (!Object.keys(out).length) warn('update: nothing to set');
       return out;
     },
@@ -1774,6 +1845,14 @@ export const translators: Record<PlanStep['object'], Translator> = {
             for (const g of want) for (const c of (g.visibility_conditions as Row[]) ?? [])
               if (!have.some((h) => Number(h.lookup_field_id) === Number(c.lookup_field_id) && String(h.lookup_value_id) === String(c.lookup_value_id)))
                 out.push(`form: field ${r.fieldid} has no condition "${c.lookup_value}" after saving`);
+          }
+        }
+        else if (k === SPIKE_MAP.layout.config) {
+          // L1: each tab's shown/hidden flag kept (row ids are Halo's to keep or reissue).
+          for (const r of v as Row[]) {
+            const got = ((back[k] as Row[]) ?? []).find((b) => Number(b.tab_id) === Number(r.tab_id) && String(b.tab_name) === String(r.tab_name));
+            if (!got) out.push(`layout: tab ${r.tab_name} missing after saving`);
+            else if (Number(got.display) !== Number(r.display)) out.push(`layout: tab ${r.tab_name} is ${Number(got.display) ? 'shown' : 'hidden'}, wanted ${Number(r.display) ? 'shown' : 'hidden'}`);
           }
         }
         else if (JSON.stringify(back[k]) !== JSON.stringify(v)) out.push(`${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(v)}`);

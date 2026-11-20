@@ -163,6 +163,7 @@ export function describeParts(step: PlanStep, plan: Plan, inv: Inv): string[] {
   if (st.top_level) out.push('move to the top level');
   if (st.everyone) out.push('User Access: Everyone');
   if (st.parent) out.push(`move under ${ref(st.parent)}`);
+  if (st.layout) out.push(st.layout === 'standard' ? 'show only the Progress, Attachments, Additional Fields, View Log, Notification Log and Details tabs' : `show only these tabs: ${st.layout.tabs.join(', ')}`);
   if (st.attachments) out.push(st.attachments.allow === false ? 'turn attachments off' : st.attachments.min ? `require at least ${st.attachments.min} attachment${st.attachments.min === 1 ? '' : 's'}` : 'allow attachments (not required)');
   for (const f of st.remove_fields ?? []) out.push(`take ${ref(f)} off the form (the field stays in Halo)`);
   if (st.summary !== undefined) out.push(`summary "${st.summary}"`);
