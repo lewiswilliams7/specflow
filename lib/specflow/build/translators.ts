@@ -56,6 +56,10 @@ export const SPIKE_MAP = {
     standard: ['progress', 'attachments', 'additional fields', 'view log', 'notification log', 'details'],
   },
 
+  /** Rule T10 (20 Nov, Lewis): ticket type > Defaults > "Exclude from SLA". While it's on, SLAs don't apply to that
+   *  type's tickets. Key unknown until round 54 reads it (B2: off until then). Enact turns it off whenever it sets an SLA. */
+  slaExclusion: { key: null as string | null },
+
   /** Rule L2 (round 52, Concord): where a field shows on a ticket. Per form: the form row's techtab_id (-1 = the field's
    *  own tab; -2 = the Details tab; a custom tab's id). Round 52: techtab_id -2 kept on zz form 65, rows kept. The field
    *  itself: showondetailsscreen (round 52: kept on zz r31 choice) puts it in the Ticket Information panel; it applies to
@@ -502,6 +506,13 @@ export const FEATURES: Feature[] = [
     prompt: `- Field placement for agents (L2): ticket_type update set: { place_fields: [{ label: "exact label of a field already on that form" OR field: ref of a field step in this plan, where: "ticket_information" | "details" | "additional" }] }. Use label for fields already on the form (no reuse step needed); field only for a field created or reused in this plan, in the same update step as the layout or add_fields. Decide for every field on every ticket type this plan creates or lays out: "ticket_information" for a few short key facts an agent needs at a glance (the person's name and number, site, key dates); "details" for the core of the request (what's being asked, the main choices, long text); "additional" for everything else (supporting, optional or rarely read answers, uploads). "ticket_information" changes that field on every form it's on: say so in assumptions when the field is reused.`,
   },
   {
+    // T10: "Exclude from SLA" on a ticket type.
+    key: 'sla_exclusion',
+    name: 'turning "Exclude from SLA" off on a ticket type',
+    sections: ['slaExclusion'],
+    prompt: `- "Exclude from SLA" on a ticket type (T10): ticket_type update set: { exclude_from_sla: false } lets SLAs apply to it. Enact turns it off automatically whenever a step sets an SLA, so only add it on its own when asked.`,
+  },
+  {
     key: 'read_only',
     name: 'read-only fields on a form',
     sections: ['readOnly'],
@@ -620,6 +631,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.set?.read_only?.length) keys.add('read_only');
   if (step.set?.attachments) keys.add('attachments');
   if (step.set?.layout) keys.add('layout');
+  if (step.set?.exclude_from_sla !== undefined) keys.add('sla_exclusion');
   if (step.set?.place_fields?.length) keys.add('placement');
   if (step.object === 'role' && step.action === 'create') keys.add('roles');
   if (step.object === 'asset_type' || step.object === 'asset_group') keys.add('asset_types');
@@ -1154,6 +1166,8 @@ export interface PlanStep {
     attachments?: { allow?: boolean; min?: number };
     /** ticket_type: which tabs agents see, in order (L1). "standard" = SPIKE_MAP.layout.standard. Every other tab hidden. */
     layout?: 'standard' | { tabs: string[] };
+    /** ticket_type: "Exclude from SLA" (T10). false lets SLAs apply. Also turned off automatically when an SLA is set. */
+    exclude_from_sla?: boolean;
     /** ticket_type: where each field shows for agents (L2): the Details tab, Additional Fields, or the Ticket Information panel. */
     place_fields?: { field?: string; label?: string; where: 'details' | 'additional' | 'ticket_information' }[];
     /** service_category: move under another category (a service_category ref), or top_level: true (SC1, round 39). */
@@ -1735,6 +1749,13 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (st.approval) out.approval_process_id = refs[st.approval]?.id;
       if (st.team && m.teamName) out[m.teamName] = refs[st.team]?.name; // rule T1: team by NAME
       if (st.sla && m.sla) out[m.sla] = refs[st.sla]?.id;
+      {
+        // T10: an SLA does nothing while the type is excluded from SLAs. Setting an SLA turns the exclusion off.
+        const xk = SPIKE_MAP.slaExclusion.key;
+        if (st.exclude_from_sla !== undefined && !xk) warn('SPIKE_MAP gap: "Exclude from SLA" key unknown (round 54)');
+        const want = st.exclude_from_sla !== undefined ? st.exclude_from_sla : st.sla ? false : undefined;
+        if (xk && want !== undefined && Boolean(current[xk]) !== want) out[xk] = want;
+      }
       if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length || st.copy_standard_fields_from || st.replace_fields?.length || st.field_hints?.length) {
         // Rule U2 (2026-10-23): the form is one list. Send ALL existing rows back (ids kept) plus the new ones.
         const rows = keepRows(current[m.fields as string]);
@@ -1947,6 +1968,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       }
       if (step.team) set(p, m.teamName, refs[step.team]?.name, 'default team', warn);
       if (step.sla) set(p, m.sla, refs[step.sla]?.id, 'default SLA', warn);
+      // T10: a new type with an SLA is never excluded from SLAs, whatever the template had.
+      if (step.sla && SPIKE_MAP.slaExclusion.key && p[SPIKE_MAP.slaExclusion.key]) p[SPIKE_MAP.slaExclusion.key] = false;
       if (step.approval) {
         set(p, m.approvalProcess, refs[step.approval]?.id, 'approval process', warn);
         // Display name copied from the template would otherwise still name the template's process.

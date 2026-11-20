@@ -60,6 +60,7 @@
  * type "X" (data_id 0, allow_access true); Enact's category 26 had none. Likely "Everyone". Give zz category 26 and
  * zz service 170 that group and read back; Lewis checks User Access shows Everyone.
  *
+ * Round 54 (20 Nov): the ticket type "Exclude from SLA" key (read, then on/off on the zz form).
  * Round 53 (20 Nov): the builder's place_fields on the zz form (one field to each place).
  * Round 52 (20 Nov): field placement, three single changes on zz fields (showondetailsscreen, field tab 1, form row
  * techtab_id -2).
@@ -90,7 +91,7 @@ import type { Plan } from './translators';
 
 type Row = Record<string, unknown>;
 
-export const ROUND = 53;
+export const ROUND = 54;
 
 export async function learnAreas(opts: { apply: boolean; instance: string; log?: (line: string) => void }): Promise<{ out: Record<string, unknown>; summary: string[] }> {
   const apply = opts.apply;
@@ -307,6 +308,30 @@ export async function learnAreas(opts: { apply: boolean; instance: string; log?:
       ],
     } as unknown as Plan);
     summary.push('· field placement: on a "zz Enact r36 form" ticket as an agent: is "zz Enact r33 locked" on the Details tab, "zz Enact r31 choice" in the Ticket Information panel, and "zz Enact r43 upload" on Additional Information? Only six tabs?');
+  });
+
+  await area('exclude from SLA', async () => {
+    const A = 'exclude from SLA';
+    // Round 54 (20 Nov): ticket type > Defaults > "Exclude from SLA" must be off for SLAs to apply (Lewis, Compleat).
+    // (1) Read the SLA-ish keys on Halo's own types; (2) on the zz form, if exactly one true/false key looks like the
+    // exclusion, switch it on, read back, switch it off, read back. Lewis checks the zz form's Defaults after.
+    const types = (await list('TicketType')).rows.filter(own);
+    const seen: Record<string, Set<string>> = {};
+    for (const t of types.slice(0, 15)) {
+      const d = await detail('TicketType', t.id);
+      for (const [k, v] of Object.entries(d ?? {})) if (/sla|exclud|response|resolution|target/i.test(k) && typeof v !== 'object') (seen[k] ??= new Set()).add(JSON.stringify(v));
+    }
+    note(A, 'SLA-like keys on Halo own types (values seen)', Object.fromEntries(Object.entries(seen).map(([k, v]) => [k, [...v].slice(0, 6)])));
+    const form = (await list('TicketType')).rows.find((t) => /^zz Enact r36 form$/i.test(nameOf(t)));
+    if (!form || !apply) return;
+    const d = await detail('TicketType', form.id);
+    const hits = Object.keys(d ?? {}).filter((k) => /exclud|nosla|no_sla|ignoresla|slaexempt|dontapplysla|sla_exclude/i.test(k) && typeof d?.[k] === 'boolean');
+    note(A, 'candidate keys on the zz form', hits.map((k) => `${k}=${d?.[k]}`));
+    if (hits.length !== 1) { summary.push(`· exclude from SLA: ${hits.length} candidate keys, nothing changed. Tell Claude what the setting shows on any ticket type`); return; }
+    const key = hits[0];
+    await update(A, `${key} true`, 'TicketType', Number(form.id), { [key]: true });
+    await update(A, `${key} false`, 'TicketType', Number(form.id), { [key]: false });
+    summary.push(`· exclude from SLA: tried "${key}" on the zz form (on, then off). Open "zz Enact r36 form" > Defaults: "Exclude from SLA" should now be OFF`);
   });
 
   return { out, summary };
