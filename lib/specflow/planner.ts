@@ -757,6 +757,36 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     plan.assumptions = [...(plan.assumptions ?? []), `"${tt.name}" keeps the workflow of "${tt.based_on}" ("${wf}"), which it's copied from.`];
   }
 
+  // M31 (20 Nov): a form with no approval process sitting on a workflow that waits for one (a new type copied from
+  // Compleat's "Employee Change Request" kept its ad-hoc approval workflow, and the model said it fixed it twice when
+  // it hadn't). Point it at the instance's matching "without approval" workflow in code.
+  {
+    const all = plan.steps as PlanStep[];
+    const wfNames = Object.keys(inventory.workflows_and_their_steps ?? {});
+    const without = (wf: string) => {
+      const base = wf.replace(/\s*\(with (ad-hoc )?approval[^)]*\)\s*$/i, '').trim().toLowerCase();
+      return wfNames.find((n) => /without approval/i.test(n) && n.replace(/\s*\(without approval\)\s*$/i, '').trim().toLowerCase() === base);
+    };
+    const nameOf = (x: PlanStep) => String(x.name ?? x.match?.name ?? '').toLowerCase();
+    for (const t of all.filter((x) => x.object === 'ticket_type')) {
+      const key = nameOf(t);
+      const approved = all.some((x) => x.object === 'ticket_type' && nameOf(x) === key && (x.approval || x.set?.approval));
+      const ref = t.set?.workflow;
+      const wf = all.find((x) => x.id === ref);
+      const wfName = String(wf?.name ?? wf?.match?.name ?? '');
+      if (approved || !ref || !/\(with (ad-hoc )?approval/i.test(wfName)) continue;
+      const target = without(wfName);
+      if (!target) continue;
+      let r = all.find((x) => x.object === 'workflow' && String(x.name ?? x.match?.name ?? '').toLowerCase() === target.toLowerCase());
+      if (!r) {
+        r = { id: `wf_${target.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`, object: 'workflow', action: 'reuse', match: { name: target } } as PlanStep;
+        all.splice(all.indexOf(t), 0, r);
+      }
+      t.set = { ...(t.set ?? {}), workflow: r.id };
+      plan.assumptions = [...(plan.assumptions ?? []), `"${t.name ?? t.match?.name}" has no approval process, so it uses "${target}" instead of "${wfName}".`];
+    }
+  }
+
   // M30 (19 Nov): a show rule on an existing dropdown that lacks the answer it tests ("Other" on Bruntwood's
   // Application / System, which only had a placeholder option) gets that option added. Adding an option only adds,
   // so the check "has no option Other" is repaired in code instead of sent round the model again.
