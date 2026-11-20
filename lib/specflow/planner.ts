@@ -803,6 +803,32 @@ export function codeRepairs(plan: Plan, inventory: Inventory) {
     }
   }
 
+  // M33 (20 Nov): place_fields naming a step that doesn't exist (Compleat: the model invented f_ge_policy_area etc. for
+  // fields already on the form, with no reuse step). Match the made-up id to a field on THAT form by name or label and
+  // use its label; drop it (with an assumption) if there's no single match. Labels need no step.
+  {
+    const all = plan.steps as PlanStep[];
+    const ids = new Set(all.map((x) => x.id));
+    const cfMap = (inventory.details?.custom_fields ?? {}) as Record<string, string>;
+    const labelOf = (name: string) => cfMap[name]?.match(/^"([^"]*)"/)?.[1];
+    const flat = (t: string) => t.toLowerCase().replace(/&amp;|&/g, 'and').replace(/[^a-z0-9]+/g, '');
+    const dropped: string[] = [];
+    for (const t of all.filter((x) => x.object === 'ticket_type' && x.set?.place_fields?.length)) {
+      const tt = (inventory.details?.ticket_types as Record<string, { fields?: string[]; groups?: Record<string, string[]> }> | undefined)?.[String(t.match?.name ?? t.name)];
+      const onForm = [...(tt?.fields ?? []), ...Object.values(tt?.groups ?? {}).flat()].map((f) => f.replace(/\*$/, '').trim());
+      t.set!.place_fields = t.set!.place_fields!.flatMap((p) => {
+        if (!p.field || ids.has(p.field) || p.label) return [p];
+        const want = flat(p.field.replace(/^f_/, ''));
+        const hits = onForm.filter((n) => { const a = flat(n.replace(/^CF/, '')), b = flat(labelOf(n) ?? ''); return a === want || b === want || (want.length >= 5 && (a.endsWith(want) || want.endsWith(a) || b === want)); });
+        const label = hits.length === 1 ? labelOf(hits[0]) : undefined;
+        if (label) return [{ label, where: p.where }];
+        dropped.push(`${p.field} on ${t.match?.name ?? t.name}`);
+        return [];
+      });
+    }
+    if (dropped.length) plan.assumptions = [...(plan.assumptions ?? []), `Couldn't tell which field these meant, so they stay where they are: ${dropped.join(', ')}.`];
+  }
+
   // M30 (19 Nov): a show rule on an existing dropdown that lacks the answer it tests ("Other" on Bruntwood's
   // Application / System, which only had a placeholder option) gets that option added. Adding an option only adds,
   // so the check "has no option Other" is repaired in code instead of sent round the model again.

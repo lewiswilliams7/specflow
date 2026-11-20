@@ -345,7 +345,8 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     for (const r of s.set?.read_only ?? []) if (kindOf(r) !== 'field') errors.push(`step "${s.id}": read_only must list field steps (got "${r}")`);
     // L2: place_fields lists field steps and a known place.
     for (const pf of s.set?.place_fields ?? []) {
-      if (kindOf(pf.field) !== 'field') errors.push(`step "${s.id}": place_fields must name field steps (got "${pf.field}")`);
+      if (!pf.field && !pf.label) errors.push(`step "${s.id}": each place_fields entry needs label (a field on the form) or field (a field step)`);
+      else if (pf.field && kindOf(pf.field) !== 'field') errors.push(`step "${s.id}": place_fields field must be a field step (got "${pf.field}"); for a field already on the form use label instead`);
       if (!['details', 'additional', 'ticket_information'].includes(pf.where)) errors.push(`step "${s.id}": place_fields where is details, additional or ticket_information (got "${pf.where}")`);
     }
     if (s.set?.place_fields?.length && (s.object !== 'ticket_type' || s.action !== 'update')) errors.push(`step "${s.id}": place_fields goes on a ticket_type UPDATE step`);

@@ -499,7 +499,7 @@ export const FEATURES: Feature[] = [
     key: 'placement',
     name: 'where fields show on a ticket',
     sections: ['placement'],
-    prompt: `- Field placement for agents (L2): ticket_type update set: { place_fields: [{ field: field ref, where: "ticket_information" | "details" | "additional" }] }, in the same update step as the layout or add_fields. Decide for every field on every ticket type this plan creates or lays out: "ticket_information" for a few short key facts an agent needs at a glance (the person's name and number, site, key dates); "details" for the core of the request (what's being asked, the main choices, long text); "additional" for everything else (supporting, optional or rarely read answers, uploads). "ticket_information" changes that field on every form it's on: say so in assumptions when the field is reused.`,
+    prompt: `- Field placement for agents (L2): ticket_type update set: { place_fields: [{ label: "exact label of a field already on that form" OR field: ref of a field step in this plan, where: "ticket_information" | "details" | "additional" }] }. Use label for fields already on the form (no reuse step needed); field only for a field created or reused in this plan, in the same update step as the layout or add_fields. Decide for every field on every ticket type this plan creates or lays out: "ticket_information" for a few short key facts an agent needs at a glance (the person's name and number, site, key dates); "details" for the core of the request (what's being asked, the main choices, long text); "additional" for everything else (supporting, optional or rarely read answers, uploads). "ticket_information" changes that field on every form it's on: say so in assumptions when the field is reused.`,
   },
   {
     key: 'read_only',
@@ -1155,7 +1155,7 @@ export interface PlanStep {
     /** ticket_type: which tabs agents see, in order (L1). "standard" = SPIKE_MAP.layout.standard. Every other tab hidden. */
     layout?: 'standard' | { tabs: string[] };
     /** ticket_type: where each field shows for agents (L2): the Details tab, Additional Fields, or the Ticket Information panel. */
-    place_fields?: { field: string; where: 'details' | 'additional' | 'ticket_information' }[];
+    place_fields?: { field?: string; label?: string; where: 'details' | 'additional' | 'ticket_information' }[];
     /** service_category: move under another category (a service_category ref), or top_level: true (SC1, round 39). */
     top_level?: boolean;
     /** service_category: User Access "Everyone" (SC3). */
@@ -1303,6 +1303,9 @@ function fromTemplate(file: string, resource: string): Record<string, unknown> {
 }
 
 /** Template file for a field of a given plan type ("text", "dropdown", ...). */
+/** Labels compared ignoring case, punctuation and spacing (L2 place_fields by label). */
+const looseLabel = (t: unknown) => String(t ?? '').toLowerCase().replace(/&amp;|&/g, 'and').replace(/[^a-z0-9]+/g, '');
+
 /** L1: the tab_config rows for a layout: the wanted tabs shown in the given order, every other tab hidden after them. */
 export function layoutRows(current: Row[], want: string[], warn: (m: string) => void): Row[] {
   const L = SPIKE_MAP.layout;
@@ -1710,9 +1713,16 @@ export const translators: Record<PlanStep['object'], Translator> = {
 
   ticket_type: {
     // L2: a field placed in the Ticket Information panel has its own switch turned on (it applies on every form).
-    related: async (_now, step, refs) => (step.set?.place_fields ?? []).filter((p) => p.where === 'ticket_information' && SPIKE_MAP.placement.ticketInfo && Number(refs[p.field]?.id) > 0)
-      .map((p) => ({ resource: 'FieldInfo', payload: { id: Number(refs[p.field].id), [SPIKE_MAP.placement.ticketInfo as string]: true }, label: `${refs[p.field]?.row?.label ?? refs[p.field]?.name ?? p.field} in the Ticket Information panel` })),
-    relatedPreview: (step, refs) => (step.set?.place_fields ?? []).filter((p) => p.where === 'ticket_information').map((p) => `${refs[p.field]?.row?.label ?? refs[p.field]?.name ?? p.field} in the Ticket Information panel (that field on every form)`),
+    related: async (now, step, refs) => {
+      const key = SPIKE_MAP.placement.ticketInfo;
+      if (!key) return [];
+      const onForm = ((now[SPIKE_MAP.ticketType.fields as string] as Row[]) ?? []).map((r) => ({ id: Number(r.fieldid), label: (r.fieldinfo as Row | undefined)?.label }));
+      return (step.set?.place_fields ?? []).filter((p) => p.where === 'ticket_information').flatMap((p) => {
+        const id = p.field && Number(refs[p.field]?.id) > 0 ? Number(refs[p.field].id) : onForm.find((f) => p.label && looseLabel(f.label) === looseLabel(p.label))?.id;
+        return id ? [{ resource: 'FieldInfo', payload: { id, [key]: true }, label: `${p.label ?? refs[p.field ?? '']?.row?.label ?? refs[p.field ?? '']?.name ?? p.field} in the Ticket Information panel` }] : [];
+      });
+    },
+    relatedPreview: (step, refs) => (step.set?.place_fields ?? []).filter((p) => p.where === 'ticket_information').map((p) => `${p.label ?? refs[p.field ?? '']?.row?.label ?? refs[p.field ?? '']?.name ?? p.field} in the Ticket Information panel (that field on every form)`),
     detailParams: SPIKE_MAP.layout.readParams,
     resource: 'TicketType',
     template: 'template-tickettype.json',
@@ -1836,8 +1846,17 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const rows = (out[key] as Row[]) ?? keepRows(current[key]);
         const info = new Map(((current[key] as Row[]) ?? []).map((r) => [String(r.fieldid), (r.fieldinfo as Row | undefined) ?? {}]));
         for (const pf of st.place_fields) {
-          const row = rows.find((x) => String(x.fieldid) === String(refs[pf.field]?.id));
-          if (!row) { warn(`place_fields: ${refs[pf.field]?.row?.label ?? refs[pf.field]?.name ?? pf.field} isn't on this form (add it in the same step with add_fields)`); continue; }
+          // A field step (ref), or the label of a field already on this form (no reuse step needed, 20 Nov Compleat).
+          const byLabel = pf.label ? [...info.entries()].find(([, fi]) => looseLabel(fi.label) === looseLabel(pf.label)) : undefined;
+          const id = pf.field && refs[pf.field] ? refs[pf.field].id : byLabel?.[0];
+          const row = rows.find((x) => String(x.fieldid) === String(id));
+          const shownAs = pf.label ?? refs[pf.field ?? '']?.row?.label ?? refs[pf.field ?? '']?.name ?? pf.field;
+          if (!row) {
+            // A field inside a section moves with its section (B4 note, never blocks); anything else isn't on the form.
+            const inSection = ((current[key] as Row[]) ?? []).some((r) => (((r.group as Row | undefined)?.fields as Row[]) ?? []).some((f) => (id !== undefined && String(f.fieldid) === String(id)) || (pf.label && looseLabel((f.fieldinfo as Row | undefined)?.label) === looseLabel(pf.label))));
+            warn(inSection ? `note: ${shownAs} sits in a section on this form, so it stays where its section is` : `place_fields: ${shownAs} isn't on this form (add it in the same step with add_fields)`);
+            continue;
+          }
           if (!P.rowTab) { warn('SPIKE_MAP gap: form row tab key unknown'); break; }
           const own = info.get(String(row.fieldid))?.tab_id;
           if (pf.where === 'details') row[P.rowTab] = P.detailsTab;
@@ -2664,7 +2683,7 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.set?.add_fields ?? []).map((f) => f.ref),
     ...(step.set?.field_hints ?? []).map((f) => f.ref),
     ...(step.set?.field_mandatory ?? []).map((f) => f.ref),
-    ...(step.set?.place_fields ?? []).map((f) => f.field),
+    ...(step.set?.place_fields ?? []).map((f) => f.field), // a label needs no step
     ...(step.set?.replace_fields ?? []).flatMap((r) => [r.old, r.new]),
     step.dynamic?.copy_settings_from,
     ...(step.set?.add_members ?? []),
