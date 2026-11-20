@@ -216,7 +216,8 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
     const fieldById = new Map(fieldDetails.map((f) => [Number(f.id), f]));
     const rowOf = (row: Row, section?: string) => {
       const f = fieldById.get(Number(row.fieldid)) ?? ((row.fieldinfo as Row) ?? {});
-      const type = FIELD_TYPE_NAMES[Number(f.type)] ?? (fieldById.has(Number(row.fieldid)) ? `type ${f.type}` : 'Halo field');
+      const live = Object.values(f).some((v) => typeof v === 'string' && /\bselect\b[\s\S]+\bfrom\b/i.test(v));
+      const type = `${FIELD_TYPE_NAMES[Number(f.type)] ?? (fieldById.has(Number(row.fieldid)) ? `type ${f.type}` : 'Halo field')}${live ? ' (live list from Halo)' : ''}`;
       const options = ((f.values as Row[]) ?? []).map((v) => String(v.name)).filter(Boolean);
       const help = String(row.override_hint ?? '').trim() || String(f.hint ?? '').trim();
       const conds = ((row.group_visibility_conditions as Row[]) ?? []).flatMap((g) => (g.visibility_conditions as Row[]) ?? []);
@@ -262,7 +263,8 @@ export async function readInventory(halo: HaloReader, opts: { detail?: boolean; 
       services: services.filter((sv) => Number(sv.service_category_id) === Number(c.id)).map((sv) => ({
         name: nameOf(sv),
         on_portal: !!sv.showinusercatalog,
-        logs: [...new Set([Number(sv.service_tickettype_id), ...((sv.service_request_details as Row[]) ?? []).map((r) => Number(r.tickettype_id ?? r.service_tickettype_id))].filter((n) => n > 0).map((n) => ttName.get(n) ?? `ticket type ${n}`))],
+        // The form a service logs: service_tickettype_id, or its request rows (servicedetail_requesttypeid, round 36).
+        logs: [...new Set([Number(sv.service_tickettype_id), ...((sv.service_request_details as Row[]) ?? []).map((r) => Number(r.servicedetail_requesttypeid ?? r.tickettype_id))].filter((n) => n > 0).map((n) => ttName.get(n) ?? `a retired form (id ${n})`))],
       })),
     })).sort((a, b) => a.path.localeCompare(b.path));
     const uncategorised = services.filter((sv) => !byId.has(Number(sv.service_category_id))).map((sv) => ({ name: nameOf(sv), on_portal: !!sv.showinusercatalog }));
