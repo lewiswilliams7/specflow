@@ -257,6 +257,10 @@ export const SPIKE_MAP = {
      *  Access "Everyone"; categories Enact made had none. Round 41: category 26 kept it. A service shows its category's
      *  group (service 170 read back category 8's), so access is set on the category (rule SC3). */
     access: 'group_user_access' as string | null,
+    /** SC4 (20 Nov): the text under a category on the portal is "Summary" on the category screen (Lewis, Compleat), the
+     *  same name services use (round 36, service 170). Every save is read back (verifyUpdate/verifyCreate), so a key
+     *  Halo doesn't keep is reported, never silent. */
+    summary: 'summary' as string | null,
   },
   service: {
     /** Round 36: service 170 kept a service_request_details row for ticket type 65 (shape from Halo's own services 122 and 71). */
@@ -402,7 +406,7 @@ export const FEATURES: Feature[] = [
     key: 'services',
     name: 'services in the service catalogue',
     sections: ['service', 'serviceCategory', 'builderProof'],
-    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { name? (rename), summary?, ticket_type?, service_category?, show_on_portal? }. A service category can be renamed, moved or opened to everyone: service_category update set: { name?, parent?: ref of another service_category, top_level?: true, everyone?: true (User Access "Everyone") }. New categories are always open to everyone. A service's User Access comes from its category, so set it on the category. Order moves so no category is ever four levels deep, and never move a category under itself or its own child (move the child out first). Halo allows at most THREE levels of service categories (SC2, e.g. HR > Recruitment > Onboarding): a deeper path goes in its third level, and say so in assumptions. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
+    prompt: `- service (an entry in the portal's service catalogue): create { name, summary (the description people see on the self-service portal: when a brief or design gives a request type a description, it goes here, word for word), service_category: ref of a service_category step (inventory.service_categories lists paths "Parent > Child"; reuse one by its FULL path, match: { name: "HR > HR Shared Services" }), ticket_type: ticket_type ref (what the portal logs when someone requests it), show_on_portal?: true (default) }. update set: { name? (rename), summary?, ticket_type?, service_category?, show_on_portal? }. A service category can be renamed, moved or opened to everyone: service_category update set: { name?, parent?: ref of another service_category, top_level?: true, everyone?: true (User Access "Everyone"), summary?: the text shown under the category on the portal (its description, word for word) }. A new service_category can take summary too. New categories are always open to everyone. A service's User Access comes from its category, so set it on the category. Order moves so no category is ever four levels deep, and never move a category under itself or its own child (move the child out first). Halo allows at most THREE levels of service categories (SC2, e.g. HR > Recruitment > Onboarding): a deeper path goes in its third level, and say so in assumptions. Enact adds the ticket type under the service's Service Request Details, so people can request it on the portal; to make an existing service requestable, update it with set: { ticket_type: ref of its ticket type }. Check inventory.services first and update the one that exists. Put a service where the request says. Walk the requested path from the top: reuse each level that exists AT THAT PLACE in the tree (full path in inventory.service_categories), and create the rest in order, each under the one before: service_category create { name, parent: ref of the level above } (no parent = top level). A category with the same name in another branch is a different category: never reuse it for this path. Never create a category whose full path already exists.`,
   },
   {
     key: 'imports',
@@ -1844,6 +1848,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
     build: (step, refs, warn) => {
       const p: Row = { name: step.name };
       set(p, SPIKE_MAP.serviceCategory.parent, step.parent ? refs[step.parent]?.id : 0, 'service category parent', warn);
+      const sk = SPIKE_MAP.serviceCategory.summary;
+      if (sk && step.summary) p[sk] = step.summary;
       // SC3: a new category is open to everyone, like Halo's own (added after create, as round 41 proved it).
       const a = SPIKE_MAP.serviceCategory.access;
       if (a) p._enact_after = { [a]: everyoneAccess() };
@@ -1863,14 +1869,19 @@ export const translators: Record<PlanStep['object'], Translator> = {
       else if (k && st.parent) out[k] = refs[st.parent]?.id;
       const a = SPIKE_MAP.serviceCategory.access;
       if (a && st.everyone && !hasEveryone(current?.[a])) out[a] = everyoneAccess();
+      const sk = SPIKE_MAP.serviceCategory.summary;
+      if (sk && st.summary !== undefined && String(current?.[sk] ?? '') !== st.summary) out[sk] = st.summary;
       // Already as asked (e.g. already open to everyone) is "no change needed", not a problem (13 Nov, Compleat).
-      if (!Object.keys(out).length && !st.name && !st.parent && !st.top_level && !st.everyone) warn('service category update: nothing to set');
+      if (!Object.keys(out).length && !st.name && !st.parent && !st.top_level && !st.everyone && st.summary === undefined) warn('service category update: nothing to set');
       return out;
     },
     verifyCreate: (back, step, refs) => {
       const k = SPIKE_MAP.serviceCategory.parent;
       const want = step.parent ? refs?.[step.parent]?.id : 0;
-      return k && String(back[k] ?? 0) !== String(want) ? [`sits under ${back[k]}, wanted ${want}`] : [];
+      const out = k && String(back[k] ?? 0) !== String(want) ? [`sits under ${back[k]}, wanted ${want}`] : [];
+      const sk = SPIKE_MAP.serviceCategory.summary;
+      if (sk && step.summary && back[sk] !== step.summary) out.push(`summary didn't save (rule SC4: check the key on a read-back)`);
+      return out;
     },
   },
 
