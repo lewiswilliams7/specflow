@@ -1418,8 +1418,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (st.add_options?.length && m.options) {
         // Existing values keep their ids; new ones go on the end as { name } (same shape as on create).
         const values = ((current[m.options] as Row[]) ?? []).map((v) => ({ ...v }));
+        // O2 (20 Nov): "already an option" ignores case, punctuation and spacing. Compleat's holiday list had the same 20
+        // options worded without the comma, and adding the design's list would have shown every option twice.
+        const flat = (t: unknown) => String(t ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '');
         for (const name of st.add_options) {
-          if (values.some((v) => String(v.name).toLowerCase() === name.toLowerCase())) continue; // already an option
+          if (values.some((v) => flat(v.name) === flat(name))) continue; // already an option
           values.push({ name });
         }
         out[m.options] = values;
